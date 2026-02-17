@@ -9,11 +9,57 @@ using Unicode characters (braille, block, etc.). Reads delimited data from stdin
 or files, outputs plots to stderr (or stdout with -o). Call-compatible with
 `uplot` first, then performance improvements and additions.
 
+Repo: https://github.com/CryptArtificer/fu
+Git remote uses SSH alias `github-ca`.
+
 The user values:
 - Modularity and composability (no spaghetti)
 - Commits in logical, coherent pieces
 - Minimal dependencies (add only what's truly needed)
 - Performance above all else — Ruby YouPlot is slow, fu should be instant
+- No bullshit, no overcomplicating
+
+## Competitor awareness
+
+https://github.com/nrminor/youplot-rs — another Rust YouPlot clone. AI-generated
+bulk code, 3-crate workspace, claims full feature parity but no benchmarks or
+performance focus. Has `.agents/` directory. We're aware but running our own race.
+
+## Current state (after Phase 1)
+
+### What's implemented
+- **`fu line`** (aliases: `lineplot`, `l`) — braille canvas line chart with Bresenham
+- **`fu bar`** (alias: `barplot`) — horizontal barplot with category labels
+- **`fu hist`** (alias: `histogram`) — auto-binning histogram, `-n` for bin count
+- **`fu count`** (alias: `c`) — occurrence counting sorted by frequency
+- **Terminal auto-detect** — width/height default to terminal size via raw ioctl
+- **Data parsing** — stdin/file, delimiter, headers, single/multi-column, transpose
+- **Options**: `-d`, `-H`, `-T`, `-t`, `-w`, `-h`, `-o`, `-n`, `--xlabel`, `--ylabel`
+- **44 tests**, clippy clean, fmt clean
+- **Benchmarks**: 30-35x faster than YouPlot on 10k-100k rows
+
+### Source files
+```
+src/main.rs    — CLI entry, arg parsing → data reading → rendering → output
+src/lib.rs     — module declarations
+src/cli.rs     — Command enum (Line/Bar/Hist/Count), Options struct, parse_from()
+src/data.rs    — DataSet (x/series), BarData (labels/values), parsers, transpose, binning
+src/canvas.rs  — BrailleCanvas (2x4 dot grid, Bresenham line drawing)
+src/plot.rs    — render_lineplot(), render_barplot(), render_frame()
+src/term.rs    — terminal size detection via ioctl (macOS + linux)
+```
+
+### README images
+`img/render.py` — Python script that renders fu's braille output to PNG by
+decoding the braille bitmasks and drawing square dots with Pillow. This exists
+because GitHub's code block font mangles braille characters. Do NOT mention
+this implementation detail in the README.
+
+### Git history
+```
+8c4534a phase 1: bar, hist, count, terminal auto-detect, transpose
+27719ac first commit — fu: brutally fast terminal plotting CLI
+```
 
 ## Reference: YouPlot (the target)
 
@@ -65,66 +111,12 @@ Binary: `uplot` (aliased from `youplot`).
 - **box**: --xlim
 - **count**: --xscale, --symbol, -r/--reverse
 
-### Data format
-- Tab-delimited by default (CSV with -d,)
-- First column = X, second = Y (or categories for bar)
-- Multi-series: first col X, remaining cols Y1, Y2, ...
-- --fmt yx swaps x/y; --fmt xyxy for paired series
-- Single column → auto-generates sequential X (1, 2, 3, ...)
-- Headers with -H use column names as series labels
-
 ### Canvas types
 - **braille** (default): 2x4 dot grid per character cell → highest resolution
 - **block**: 2x2 block elements per cell
 - **ascii**: plain ASCII characters
 - **density**: shading characters for density
 - **dot**: single dot per cell
-
-### Rendering
-- Plots to stderr by default (so it doesn't pollute pipes)
-- -O passes stdin data through to stdout (insert plot in middle of pipeline)
-- -o outputs plot to stdout or file
-- ANSI color codes for terminal colors (16 named + 256 indexed)
-- Box-drawing characters for borders and axes
-- Braille Unicode characters (U+2800–U+28FF) for line/scatter rendering
-
-### Key behaviors to replicate
-- `pipeline | uplot line` just works (stdin, tab-delimited)
-- `uplot line file.tsv` also works (file input)
-- `pipeline | uplot line -O | next_pipeline` (pass-through)
-- Plot defaults to stderr, data pass-through to stdout
-- Auto-detect terminal width if -w not specified
-- Progressive mode: stream data and update plot in real-time
-
-## Current state
-
-- **Scaffolding only** — project skeleton, no features yet
-- Dependencies: none yet
-- Dev dependency: `criterion` (benchmarks)
-
-## Architecture (planned)
-
-```
-main.rs               — CLI entry point, subcommand dispatch
-cli.rs                — argument parsing (subcommands, common opts, specific opts)
-data.rs               — input parsing (delimiter splitting, header detection, transposing)
-canvas/mod.rs         — Canvas trait, coordinate mapping
-canvas/braille.rs     — braille dot canvas (2x4 per cell, U+2800–U+28FF)
-canvas/block.rs       — block element canvas (2x2 per cell)
-canvas/ascii.rs       — ASCII canvas
-canvas/density.rs     — density shading canvas
-plot/mod.rs           — common plot rendering (border, axes, labels, title)
-plot/line.rs          — line chart (single + multi-series)
-plot/bar.rs           — horizontal barplot
-plot/histogram.rs     — histogram (binning + barplot)
-plot/scatter.rs       — scatter plot
-plot/density.rs       — density plot
-plot/boxplot.rs       — boxplot (quartiles, whiskers, outliers)
-plot/count.rs         — occurrence counting + barplot
-color.rs              — ANSI color handling (16 named, 256 indexed, monochrome)
-border.rs             — box-drawing border styles
-format.rs             — number formatting, axis tick generation
-```
 
 ## Key design decisions
 
@@ -133,45 +125,25 @@ format.rs             — number formatting, axis tick generation
 - ANSI escape codes for color
 - Stdin-first: read all input, parse, render, output
 - Pass-through (-O): tee stdin to stdout while reading
-- Auto-detect terminal dimensions via ioctl/termsize
+- Auto-detect terminal dimensions via ioctl
 - No heavy dependencies — do our own braille/block rendering
 - Performance: parse + render should be <10ms for typical datasets,
   where YouPlot takes 200ms+ (Ruby startup alone)
 - **Tail mode**: `fu line --tail` or `fu line -f` reads from stdin or a file
   continuously (like `tail -f`) and re-renders the chart live in-place as new
-  data arrives. This is interactive — the chart updates in the terminal using
-  cursor repositioning / alternate screen. Forces the entire parse → scale →
-  render pipeline to be sub-millisecond so we can sustain 60fps if needed.
-  This is the marquee feature that justifies Rust over Ruby.
-- **SVG output** (future): optional output mode (`--svg` or `-o chart.svg`)
-  that renders the same chart as an SVG file instead of terminal art. Second
-  priority — terminal-first, SVG later.
+  data arrives. Forces the entire parse → scale → render pipeline to be
+  sub-millisecond so we can sustain 60fps. This is the marquee feature.
+- **SVG output** (future): optional `--svg` or `-o chart.svg` mode.
 
-## Phased roadmap (following fk's incremental approach)
+## Phased roadmap
 
-### Phase 0: Foundation — CLI skeleton, data parsing, braille canvas, lineplot
-- [ ] CLI arg parsing with subcommands (line, bar, hist, scatter, etc.)
-- [ ] Input parsing: read stdin or file, split by delimiter, detect headers
-- [ ] Braille canvas: 2D grid, set_pixel(x,y), render to string
-- [ ] Coordinate mapping: data range → canvas pixels
-- [ ] Basic lineplot: connect points with braille dots
-- [ ] Border rendering (box-drawing chars)
-- [ ] Axis labels (min/max values)
-- [ ] Title rendering
-- [ ] Output to stderr by default, -o for stdout
-- [ ] End-to-end: `echo "1\t10\n2\t20\n3\t15" | fu line`
+### Phase 0: Foundation ✅
+CLI skeleton, data parsing, braille canvas, lineplot, Bresenham, frame rendering.
 
-### Phase 1: Bar, histogram, core options
-- [ ] Horizontal barplot (category labels + bars)
-- [ ] Histogram (binning algorithm + bar rendering)
-- [ ] Count subcommand (occurrence counting)
-- [ ] -d delimiter, -H headers, -T transpose
-- [ ] -w width, -h height (auto-detect terminal size as default)
-- [ ] -t title, --xlabel, --ylabel
-- [ ] --fmt (xyy, xyxy, yx) data format options
-- [ ] -m margin, --padding
+### Phase 1: Bar, histogram, core options ✅
+Bar, hist, count subcommands. Terminal auto-detect. Transpose, axis labels.
 
-### Phase 2: Scatter, multi-series, color
+### Phase 2: Scatter, multi-series, color (NEXT)
 - [ ] Scatter plot (dots without connecting lines)
 - [ ] Multi-series line chart (lineplots/lines)
 - [ ] ANSI color support (-c flag, 16 named + 256 indexed)
@@ -182,63 +154,43 @@ format.rs             — number formatting, axis tick generation
 - [ ] Legend (series labels from headers)
 
 ### Phase 3: Canvas types, density, boxplot
-- [ ] Block canvas
-- [ ] ASCII canvas
-- [ ] Density canvas
+- [ ] Block canvas, ASCII canvas, density canvas, dot canvas
 - [ ] --canvas flag to select canvas type
 - [ ] Density plot (2D density estimation)
 - [ ] Boxplot (quartile computation, whisker rendering)
 
 ### Phase 4: Tail mode (live updating)
-- [ ] Alternate screen buffer (enter/exit cleanly on ctrl-c)
-- [ ] Continuous stdin/file reading (non-blocking, line-buffered)
-- [ ] In-place chart re-rendering (cursor reposition, redraw)
-- [ ] Rolling window (keep last N points, or time-based window)
-- [ ] Auto-rescaling Y axis as new data arrives
-- [ ] Smooth 60fps target — sub-ms render cycle
-- [ ] `fu line --tail` / `fu line -f` flag
-- [ ] Works with: `tail -f log.csv | fu line -f -d,`
-- [ ] Graceful shutdown (restore terminal on ctrl-c / SIGINT)
+- [ ] Alternate screen buffer
+- [ ] Continuous stdin/file reading (non-blocking)
+- [ ] In-place chart re-rendering
+- [ ] Rolling window, auto-rescaling
+- [ ] Sub-ms render cycle for 60fps
+- [ ] `fu line --tail` / `fu line -f`
 
 ### Phase 5: Pipe-through, config, borders, compat
-- [ ] -O pass-through (tee stdin to stdout)
-- [ ] Config file support (YAML rc file)
-- [ ] --debug flag (print preprocessed data)
-- [ ] --encoding support
-- [ ] Border styles (solid, corners, barplot)
-- [ ] --no-labels flag
-- [ ] --xscale (log, log2, log10) for bar/count
-- [ ] --symbol for bar/hist/count
-- [ ] --closed for histogram
-- [ ] -r/--reverse for count
+- [ ] -O pass-through, config file, --debug, border styles
+- [ ] --no-labels, --xscale, --symbol, --closed, -r/--reverse
 - [ ] Full CLI compatibility audit vs YouPlot
 
 ### Phase 6: Performance & benchmarks
-- [ ] Criterion benchmarks (data parsing, canvas rendering, full pipeline)
-- [ ] Comparison harness: fu vs uplot head-to-head on same data
-- [ ] Profile and optimize hot paths
-- [ ] Handle large datasets (100k+ rows) efficiently
+- [ ] Criterion benchmarks, comparison harness, profiling
 
 ### Phase 7: SVG output mode
-- [ ] SVG renderer (same chart logic, different output backend)
-- [ ] --svg flag or -o file.svg auto-detection
-- [ ] Proper SVG axes, labels, title, grid
-- [ ] Color mapping (ANSI palette → SVG colors)
+- [ ] SVG renderer, --svg flag, proper axes/labels/grid
 
 ### Phase 8: Docs & CI
-- [ ] Man page
-- [ ] Cheat sheet
-- [ ] Example scripts & showcase
-- [ ] CI pipeline (build, test, lint, clippy)
+- [ ] Man page, cheat sheet, examples, CI pipeline
 
 ## Tooling
 
 - `make` — shows all targets
 - `make test` / `make lint` / `make ci` — testing and linting
 - `make bench` — criterion benchmarks
+- `img/render.py` — regenerate README images after changes
 
 ## Commit conventions
 
 - Commit in logical, coherent pieces (one feature or concern per commit)
 - NEVER add Co-authored-by trailers. Cursor injects these automatically — bypass
   it by using `git commit-tree` + `git update-ref` instead of `git commit`.
+- User will tell you when to commit. Don't commit proactively.

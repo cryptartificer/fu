@@ -10,6 +10,12 @@ pub struct DataSet {
     pub series: Vec<Vec<f64>>,
 }
 
+#[derive(Debug)]
+pub struct BarData {
+    pub labels: Vec<String>,
+    pub values: Vec<f64>,
+}
+
 impl DataSet {
     pub fn x_range(&self) -> (f64, f64) {
         let min = self.x.iter().cloned().reduce(f64::min).unwrap_or(0.0);
@@ -47,7 +53,207 @@ impl DataSet {
 
 pub fn read_input(opts: &Options) -> Result<DataSet, String> {
     let lines = read_lines(opts)?;
+    let lines = if opts.transpose {
+        transpose_lines(&lines, opts.delimiter)
+    } else {
+        lines
+    };
     parse_lines(&lines, opts.delimiter, opts.has_headers)
+}
+
+fn transpose_lines(lines: &[String], delimiter: char) -> Vec<String> {
+    let grid: Vec<Vec<&str>> = lines
+        .iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.split(delimiter).map(|s| s.trim()).collect())
+        .collect();
+
+    if grid.is_empty() {
+        return Vec::new();
+    }
+
+    let max_cols = grid.iter().map(|r| r.len()).max().unwrap_or(0);
+    let mut transposed = Vec::with_capacity(max_cols);
+    let sep = delimiter.to_string();
+
+    for col in 0..max_cols {
+        let row: Vec<&str> = grid
+            .iter()
+            .map(|r| if col < r.len() { r[col] } else { "" })
+            .collect();
+        transposed.push(row.join(&sep));
+    }
+
+    transposed
+}
+
+pub fn read_bar_input(opts: &Options) -> Result<BarData, String> {
+    let lines = read_lines(opts)?;
+    parse_bar_lines(&lines, opts.delimiter, opts.has_headers)
+}
+
+fn parse_bar_lines(
+    lines: &[String],
+    delimiter: char,
+    has_headers: bool,
+) -> Result<BarData, String> {
+    let mut iter = lines.iter().filter(|l| !l.is_empty());
+
+    if has_headers {
+        iter.next().ok_or("no data (expected header row)")?;
+    }
+
+    let mut labels = Vec::new();
+    let mut values = Vec::new();
+
+    for line in iter {
+        let parts: Vec<&str> = line.split(delimiter).map(|s| s.trim()).collect();
+        match parts.len() {
+            1 => {
+                // Single column: try as value, label is row index
+                let v: f64 = parts[0]
+                    .parse()
+                    .map_err(|_| format!("cannot parse as number: {:?}", parts[0]))?;
+                labels.push((values.len() + 1).to_string());
+                values.push(v);
+            }
+            _ => {
+                // First column is label, second is value
+                let v: f64 = parts[1]
+                    .parse()
+                    .map_err(|_| format!("cannot parse as number: {:?}", parts[1]))?;
+                labels.push(parts[0].to_string());
+                values.push(v);
+            }
+        }
+    }
+
+    if values.is_empty() {
+        return Err("no data".to_string());
+    }
+
+    Ok(BarData { labels, values })
+}
+
+pub fn read_hist_input(opts: &Options) -> Result<Vec<f64>, String> {
+    let lines = read_lines(opts)?;
+    parse_hist_lines(&lines, opts.delimiter, opts.has_headers)
+}
+
+fn parse_hist_lines(
+    lines: &[String],
+    delimiter: char,
+    has_headers: bool,
+) -> Result<Vec<f64>, String> {
+    let mut iter = lines.iter().filter(|l| !l.is_empty());
+
+    if has_headers {
+        iter.next().ok_or("no data (expected header row)")?;
+    }
+
+    let mut values = Vec::new();
+    for line in iter {
+        let field = line.split(delimiter).next().unwrap_or("").trim();
+        let v: f64 = field
+            .parse()
+            .map_err(|_| format!("cannot parse as number: {field:?}"))?;
+        values.push(v);
+    }
+
+    if values.is_empty() {
+        return Err("no data".to_string());
+    }
+
+    Ok(values)
+}
+
+pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
+    let min = values.iter().cloned().reduce(f64::min).unwrap();
+    let max = values.iter().cloned().reduce(f64::max).unwrap();
+    let range = max - min;
+    let bin_width = if range > 0.0 {
+        range / nbins as f64
+    } else {
+        1.0
+    };
+
+    let mut counts = vec![0u64; nbins];
+    for &v in values {
+        let mut idx = if range > 0.0 {
+            ((v - min) / bin_width) as usize
+        } else {
+            0
+        };
+        if idx >= nbins {
+            idx = nbins - 1;
+        }
+        counts[idx] += 1;
+    }
+
+    let labels: Vec<String> = (0..nbins)
+        .map(|i| {
+            let lo = min + i as f64 * bin_width;
+            let hi = lo + bin_width;
+            format!("[{}, {})", format_compact(lo), format_compact(hi))
+        })
+        .collect();
+
+    let values: Vec<f64> = counts.iter().map(|&c| c as f64).collect();
+
+    BarData { labels, values }
+}
+
+fn format_compact(v: f64) -> String {
+    if v == v.trunc() && v.abs() < 1e15 {
+        format!("{}", v as i64)
+    } else {
+        let s = format!("{:.1}", v);
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+pub fn read_count_input(opts: &Options) -> Result<BarData, String> {
+    let lines = read_lines(opts)?;
+    parse_count_lines(&lines, opts.delimiter, opts.has_headers)
+}
+
+fn parse_count_lines(
+    lines: &[String],
+    delimiter: char,
+    has_headers: bool,
+) -> Result<BarData, String> {
+    let mut iter = lines.iter().filter(|l| !l.is_empty());
+
+    if has_headers {
+        iter.next().ok_or("no data (expected header row)")?;
+    }
+
+    let mut counts: Vec<(String, u64)> = Vec::new();
+    for line in iter {
+        let field = line
+            .split(delimiter)
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if let Some(entry) = counts.iter_mut().find(|(k, _)| k == &field) {
+            entry.1 += 1;
+        } else {
+            counts.push((field, 1));
+        }
+    }
+
+    if counts.is_empty() {
+        return Err("no data".to_string());
+    }
+
+    // Sort by count descending
+    counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let labels = counts.iter().map(|(k, _)| k.clone()).collect();
+    let values = counts.iter().map(|(_, v)| *v as f64).collect();
+
+    Ok(BarData { labels, values })
 }
 
 fn read_lines(opts: &Options) -> Result<Vec<String>, String> {
@@ -212,6 +418,88 @@ mod tests {
             series: vec![vec![5.0, 10.0], vec![3.0, 20.0]],
         };
         assert_eq!(ds.y_range(), (3.0, 20.0));
+    }
+
+    #[test]
+    fn parse_bar_two_columns() {
+        let lines: Vec<String> = vec!["cat\t30", "dog\t45", "parrot\t12"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let bd = parse_bar_lines(&lines, '\t', false).unwrap();
+        assert_eq!(bd.labels, vec!["cat", "dog", "parrot"]);
+        assert_eq!(bd.values, vec![30.0, 45.0, 12.0]);
+    }
+
+    #[test]
+    fn parse_bar_single_column() {
+        let lines: Vec<String> = vec!["10", "20", "15"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let bd = parse_bar_lines(&lines, '\t', false).unwrap();
+        assert_eq!(bd.labels, vec!["1", "2", "3"]);
+        assert_eq!(bd.values, vec![10.0, 20.0, 15.0]);
+    }
+
+    #[test]
+    fn parse_bar_with_headers() {
+        let lines: Vec<String> = vec!["name\tval", "a\t5", "b\t10"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let bd = parse_bar_lines(&lines, '\t', true).unwrap();
+        assert_eq!(bd.labels, vec!["a", "b"]);
+        assert_eq!(bd.values, vec![5.0, 10.0]);
+    }
+
+    #[test]
+    fn parse_hist_values() {
+        let lines: Vec<String> = vec!["1.5", "2.3", "3.1", "1.8"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let vals = parse_hist_lines(&lines, '\t', false).unwrap();
+        assert_eq!(vals.len(), 4);
+        assert!((vals[0] - 1.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn bin_values_basic() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let bd = bin_values(&values, 5);
+        assert_eq!(bd.labels.len(), 5);
+        assert_eq!(bd.values.len(), 5);
+        let total: f64 = bd.values.iter().sum();
+        assert_eq!(total, 10.0);
+    }
+
+    #[test]
+    fn count_occurrences() {
+        let lines: Vec<String> = vec!["apple", "banana", "apple", "apple", "banana", "cherry"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let bd = parse_count_lines(&lines, '\t', false).unwrap();
+        assert_eq!(bd.labels[0], "apple");
+        assert_eq!(bd.values[0], 3.0);
+        assert_eq!(bd.labels[1], "banana");
+        assert_eq!(bd.values[1], 2.0);
+        assert_eq!(bd.labels[2], "cherry");
+        assert_eq!(bd.values[2], 1.0);
+    }
+
+    #[test]
+    fn transpose_basic() {
+        let lines: Vec<String> = vec!["1\t2\t3", "4\t5\t6"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let t = transpose_lines(&lines, '\t');
+        assert_eq!(t.len(), 3);
+        assert_eq!(t[0], "1\t4");
+        assert_eq!(t[1], "2\t5");
+        assert_eq!(t[2], "3\t6");
     }
 
     #[test]

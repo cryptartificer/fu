@@ -95,6 +95,15 @@ charts = [
     ("interference",
      "seq 1 50 | awk '{print $1, sin($1*0.3)*cos($1*0.1)}' OFS=\"\\t\"",
      "line -t 'Interference' -w 50 -h 12"),
+    ("bar",
+     "printf 'Rust\\t48200\\nGo\\t7720\\nPython\\t4518\\nC\\t3912\\nJava\\t6100\\nZig\\t1205\\nSwift\\t3500\\n'",
+     "bar -t 'GitHub Stars' -w 50"),
+    ("hist",
+     "python3 -c \"import random; random.seed(42); [print(random.gauss(50, 15)) for _ in range(200)]\"",
+     "hist -t 'Normal Distribution' -w 60 -n 12"),
+    ("count",
+     "python3 -c \"import random; random.seed(7); [print(random.choice(['tcp','udp','icmp','tcp','tcp','udp'])) for _ in range(100)]\"",
+     "count -t 'Protocol Distribution' -w 45"),
 ]
 
 print("Rendering...")

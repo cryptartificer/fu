@@ -1,7 +1,14 @@
 use crate::canvas::BrailleCanvas;
-use crate::data::DataSet;
+use crate::data::{BarData, DataSet};
 
-pub fn render_lineplot(data: &DataSet, width: usize, height: usize, title: Option<&str>) -> String {
+pub fn render_lineplot(
+    data: &DataSet,
+    width: usize,
+    height: usize,
+    title: Option<&str>,
+    xlabel: Option<&str>,
+    ylabel: Option<&str>,
+) -> String {
     let mut canvas = BrailleCanvas::new(width, height);
     let (x_min, x_max) = data.x_range();
     let (y_min, y_max) = data.y_range();
@@ -36,7 +43,7 @@ pub fn render_lineplot(data: &DataSet, width: usize, height: usize, title: Optio
         }
     }
 
-    render_frame(&canvas, x_min, x_max, y_min, y_max, title)
+    render_frame(&canvas, x_min, x_max, y_min, y_max, title, xlabel, ylabel)
 }
 
 fn format_val(v: f64) -> String {
@@ -48,6 +55,7 @@ fn format_val(v: f64) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_frame(
     canvas: &BrailleCanvas,
     x_min: f64,
@@ -55,6 +63,8 @@ fn render_frame(
     y_min: f64,
     y_max: f64,
     title: Option<&str>,
+    xlabel: Option<&str>,
+    ylabel: Option<&str>,
 ) -> String {
     let y_min_label = format_val(y_min);
     let y_max_label = format_val(y_max);
@@ -84,11 +94,22 @@ fn render_frame(
     out.push_str("┐ \n");
 
     // Canvas rows
+    let mid_row = ch / 2;
     for row in 0..ch {
         let label = if row == 0 {
             format!("{:>w$}", y_max_label, w = y_label_width)
         } else if row == ch - 1 {
             format!("{:>w$}", y_min_label, w = y_label_width)
+        } else if row == mid_row {
+            if let Some(yl) = ylabel {
+                if yl.len() <= y_label_width {
+                    format!("{:>w$}", yl, w = y_label_width)
+                } else {
+                    " ".repeat(y_label_width)
+                }
+            } else {
+                " ".repeat(y_label_width)
+            }
         } else {
             " ".repeat(y_label_width)
         };
@@ -124,13 +145,89 @@ fn render_frame(
     out.push_str(&x_line);
     out.push('\n');
 
+    // xlabel
+    if let Some(xl) = xlabel {
+        let total_width = margin + 1 + cw + 1;
+        let pad = total_width.saturating_sub(xl.len()) / 2;
+        out.push_str(&" ".repeat(pad));
+        out.push_str(xl);
+        out.push('\n');
+    }
+
+    out
+}
+
+pub fn render_barplot(data: &BarData, width: usize, title: Option<&str>) -> String {
+    let max_val = data
+        .values
+        .iter()
+        .cloned()
+        .reduce(f64::max)
+        .unwrap_or(1.0)
+        .max(f64::MIN_POSITIVE);
+
+    let label_width = data.labels.iter().map(|l| l.len()).max().unwrap_or(0);
+    let val_labels: Vec<String> = data.values.iter().map(|&v| format_val(v)).collect();
+    let max_val_label_len = val_labels.iter().map(|l| l.len()).max().unwrap_or(0);
+
+    // Bar area = total width - label - " ┤" - " " - val_label
+    let bar_area = width
+        .saturating_sub(label_width + 3 + max_val_label_len)
+        .max(4);
+
+    let mut out = String::new();
+
+    // Title
+    if let Some(t) = title {
+        let total = label_width + 2 + bar_area + 1 + max_val_label_len;
+        let pad = total.saturating_sub(t.len()) / 2;
+        out.push_str(&" ".repeat(pad));
+        out.push_str(t);
+        out.push('\n');
+    }
+
+    // Top border
+    out.push_str(&" ".repeat(label_width + 2));
+    out.push('┌');
+    out.push_str(&" ".repeat(bar_area));
+    out.push_str("┐\n");
+
+    // Bars
+    for (i, (label, &val)) in data.labels.iter().zip(data.values.iter()).enumerate() {
+        // Right-aligned label
+        out.push_str(&format!("{:>w$}", label, w = label_width));
+        out.push_str(" ┤");
+
+        let bar_len = if max_val > 0.0 {
+            ((val / max_val) * bar_area as f64).round() as usize
+        } else {
+            0
+        };
+
+        for _ in 0..bar_len {
+            out.push('█');
+        }
+
+        let gap = bar_area.saturating_sub(bar_len);
+        out.push_str(&" ".repeat(gap));
+        out.push_str("┤ ");
+        out.push_str(&val_labels[i]);
+        out.push('\n');
+    }
+
+    // Bottom border
+    out.push_str(&" ".repeat(label_width + 2));
+    out.push('└');
+    out.push_str(&" ".repeat(bar_area));
+    out.push_str("┘\n");
+
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::DataSet;
+    use crate::data::{BarData, DataSet};
 
     #[test]
     fn format_val_integer() {
@@ -153,7 +250,7 @@ mod tests {
             x: vec![1.0, 2.0, 3.0, 4.0, 5.0],
             series: vec![vec![10.0, 20.0, 15.0, 30.0, 25.0]],
         };
-        let output = render_lineplot(&data, 20, 8, Some("test"));
+        let output = render_lineplot(&data, 20, 8, Some("test"), None, None);
         assert!(output.contains("test"));
         assert!(output.contains("┌"));
         assert!(output.contains("┘"));
@@ -169,9 +266,39 @@ mod tests {
             x: vec![1.0, 2.0],
             series: vec![vec![5.0, 10.0]],
         };
-        let output = render_lineplot(&data, 10, 5, None);
+        let output = render_lineplot(&data, 10, 5, None, None, None);
         assert!(output.contains("┌"));
         assert!(!output.contains("test"));
+    }
+
+    #[test]
+    fn render_basic_barplot() {
+        let data = BarData {
+            labels: vec!["cat".into(), "dog".into(), "parrot".into()],
+            values: vec![30.0, 45.0, 12.0],
+        };
+        let output = render_barplot(&data, 40, Some("Animals"));
+        assert!(output.contains("Animals"));
+        assert!(output.contains("cat"));
+        assert!(output.contains("dog"));
+        assert!(output.contains("parrot"));
+        assert!(output.contains("45"));
+        assert!(output.contains("█"));
+        assert!(output.contains("┤"));
+    }
+
+    #[test]
+    fn barplot_max_bar_is_full() {
+        let data = BarData {
+            labels: vec!["a".into(), "b".into()],
+            values: vec![100.0, 50.0],
+        };
+        let output = render_barplot(&data, 30, None);
+        // "a" bar should be longer than "b" bar
+        let lines: Vec<&str> = output.lines().collect();
+        let a_blocks = lines[1].matches('█').count();
+        let b_blocks = lines[2].matches('█').count();
+        assert!(a_blocks > b_blocks);
     }
 
     #[test]
@@ -181,7 +308,7 @@ mod tests {
             x: vec![0.0, 100.0],
             series: vec![vec![0.0, 50.0]],
         };
-        let output = render_lineplot(&data, 20, 5, None);
+        let output = render_lineplot(&data, 20, 5, None, None, None);
         assert!(output.contains("0"), "should contain x_min label");
         assert!(output.contains("100"), "should contain x_max label");
         assert!(output.contains("50"), "should contain y_max label");

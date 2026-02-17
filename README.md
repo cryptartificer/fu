@@ -41,14 +41,30 @@ for i in range(500):
 
 <img src="img/random_walk.png" width="700" alt="Random walk plot">
 
-**Interference pattern** — product of sin and cos
+**Bar chart** — horizontal bars with category labels
 
 ```
-seq 1 50 | awk '{print $1, sin($1*0.3)*cos($1*0.1)}' OFS="\t" \
-| fu line -t "Interference" -w 50 -h 12
+printf "Rust\t48200\nGo\t7720\nPython\t4518\nC\t3912\n" | fu bar -t "GitHub Stars" -w 50
 ```
 
-<img src="img/interference.png" width="550" alt="Interference pattern plot">
+<img src="img/bar.png" width="500" alt="Bar chart">
+
+**Histogram** — automatic binning of continuous data
+
+```
+python3 -c 'import random; random.seed(42); [print(random.gauss(50, 15)) for _ in range(200)]' \
+| fu hist -t "Normal Distribution" -w 60 -n 12
+```
+
+<img src="img/hist.png" width="580" alt="Histogram">
+
+**Count** — occurrence counting, sorted by frequency
+
+```
+echo -e "tcp\ntcp\nudp\ntcp\nicmp\nudp" | fu count -t "Protocols" -w 45
+```
+
+<img src="img/count.png" width="450" alt="Count chart">
 
 ## Why
 
@@ -92,21 +108,36 @@ Plots go to stderr by default, so you can insert `fu` mid-pipeline without corru
 cat data.tsv | fu line -t "peek" | next_command
 ```
 
+## Commands
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `line` | `lineplot`, `l` | Line chart |
+| `bar` | `barplot` | Horizontal bar chart |
+| `hist` | `histogram` | Histogram with auto-binning |
+| `count` | `c` | Count occurrences and bar chart |
+
 ## Options
 
 ```
--d DELIM    field delimiter (default: tab)
--H          input has header row
--t TITLE    title above plot
--w WIDTH    plot width in characters (default: 40)
--h HEIGHT   plot height in rows (default: 15)
--o [FILE]   output to file or stdout (default: stderr)
+-d DELIM      field delimiter (default: tab)
+-H            input has header row
+-T            transpose rows and columns
+-t TITLE      title above plot
+-w WIDTH      plot width in characters (default: terminal width)
+-h HEIGHT     plot height in rows (default: terminal height)
+-o [FILE]     output to file or stdout (default: stderr)
+-n BINS       number of histogram bins (default: 10)
+--xlabel      x-axis label
+--ylabel      y-axis label
 ```
 
 ## Roadmap
 
 - [x] Line chart with braille canvas
-- [ ] Bar chart, histogram, count
+- [x] Bar chart, histogram, count
+- [x] Terminal size auto-detect
+- [x] Transpose, axis labels
 - [ ] Scatter, density, boxplot
 - [ ] Multi-series, color, legend
 - [ ] Canvas types (block, ascii, density)

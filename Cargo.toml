@@ -1,0 +1,18 @@
+[package]
+name = "fu"
+version = "0.1.0"
+edition = "2024"
+description = "A brutally fast terminal plotting CLI — a Rust clone of YouPlot"
+license = "MIT"
+repository = "https://github.com/CryptArtificer/fu"
+keywords = ["plot", "chart", "terminal", "cli", "unicode"]
+categories = ["command-line-utilities", "visualization"]
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "render"
+harness = false

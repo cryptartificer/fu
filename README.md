@@ -55,19 +55,34 @@ for _ in range(200):
 
 <img src="img/scatter.png" width="650" alt="Scatter plot">
 
-**Multi-series line chart** — two series rendered together
+**Multi-series line chart** — two series with right-side legend
 
 ```
 python3 -c '
 import math
+print("hour\ttemp\thumidity")
 for h in range(24):
     temp = 20 + 8 * math.sin((h - 6) * math.pi / 12)
     hum = 60 - 15 * math.sin((h - 6) * math.pi / 12)
     print(f"{h}\t{temp:.1f}\t{hum:.1f}")
-' | fu lines -t "Temperature vs Humidity" -w 60 -h 14
+' | fu lines -H -t "Temperature vs Humidity" -w 60 -h 14
 ```
 
 <img src="img/multi_series.png" width="620" alt="Multi-series line chart">
+
+**sin vs cos** — multi-series with auto-color and legend
+
+```
+python3 -c '
+import math
+print("x\tsin\tcos")
+for i in range(100):
+    t = i * math.pi / 25
+    print(f"{t:.3f}\t{math.sin(t):.4f}\t{math.cos(t):.4f}")
+' | fu lines -H -t "sin vs cos" -w 70 -h 15
+```
+
+<img src="img/multi_line.png" width="700" alt="sin vs cos">
 
 **Bar chart** — horizontal bars with category labels
 

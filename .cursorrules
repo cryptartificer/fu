@@ -74,9 +74,15 @@ img/           — render.py (braille → PNG)
 
 ### README images
 `img/render.py` — Python script that renders fu's braille output to PNG by
-decoding the braille bitmasks and drawing square dots with Pillow. This exists
+decoding the braille bitmasks and drawing square dots with Pillow. Parses ANSI
+escape codes (16 named + 256 indexed) so colors, dim borders, and legends
+render accurately. Charts are run with `-C` to force color output. This exists
 because GitHub's code block font mangles braille characters. Do NOT mention
 this implementation detail in the README.
+
+Charts rendered: sine, damped, random_walk, scatter, multi_series (with legend),
+multi_line (sin/cos with legend), bar, hist, count. Run `make images` to
+regenerate after any rendering changes.
 
 ### Axis tick design
 - **X-axis**: bounds only (min left-aligned, max right-aligned). No intermediates.
@@ -94,6 +100,8 @@ this implementation detail in the README.
 
 ### Git history
 ```
+e51e832 render.py: ANSI color support, colored PNGs, multi_line chart
+71bdb02 cursorrules: update git history
 5e39884 regenerate README images, add margin/padding to docs
 6c56ff0 update cursorrules: git history, test count, API details, showcase tooling
 ac4e4e7 per-side layout: Sides {top,right,bottom,left} for margin and padding

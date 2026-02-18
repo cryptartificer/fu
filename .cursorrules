@@ -44,7 +44,7 @@ performance focus. Has `.agents/` directory. We're aware but running our own rac
 - **Options**: `-d`, `-H`, `-T`, `-t`, `-w`, `-h`, `-o`, `-n`, `-c`, `-C`, `-M`,
   `-m` (margin), `--padding`, `--grid`, `--xlim`, `--ylim`, `--xlabel`, `--ylabel`
 - **Legend** — series labels from header row, right-aligned inline with data rows (uplot style)
-- **65 tests**, clippy clean, fmt clean
+- **71 tests**, clippy clean, fmt clean
 - **Benchmarks**: 30-35x faster than YouPlot on 10k-100k rows
 
 ### Source files
@@ -57,7 +57,20 @@ src/data.rs    — DataSet (x/series), BarData (labels/values), parsers, transpo
 src/canvas.rs  — BrailleCanvas (2x4 dot grid, Bresenham, per-cell color tracking)
 src/plot.rs    — PlotOptions, nice_num/nice_bounds, axis_ticks, render_*, render_frame
 src/term.rs    — terminal size detection via ioctl (macOS + linux)
+showcase/      — compare.sh (visual comparison with uplot)
+img/           — render.py (braille → PNG)
 ```
+
+### Key API details
+- `render_lineplot(data, opts)` / `render_scatter(data, opts)` — take `&PlotOptions`
+  which bundles width, height, title, labels, color_mode, grid, xlim/ylim, margin, padding.
+  Both call `render_frame()` internally for borders, labels, legend.
+- `render_barplot(data, width, title, color_mode, margin, padding, symbol)` — `symbol`
+  is `'■'` for bar/count, `'▇'` for hist (matches uplot's per-subcommand characters).
+  Takes `&Sides` for margin and padding.
+- `render_frame()` handles: Y-axis tick labels, ylabel, top/bottom borders with ─,
+  left/right │ borders, padding.top/bottom as empty bordered rows, right-side legend
+  (inline with first N data rows, colored), X-axis min/max labels, xlabel.
 
 ### README images
 `img/render.py` — Python script that renders fu's braille output to PNG by
@@ -81,6 +94,8 @@ this implementation detail in the README.
 
 ### Git history
 ```
+ac4e4e7 per-side layout: Sides {top,right,bottom,left} for margin and padding
+0b1901e phase 2: scatter, multi-series, color, axis labels
 e28551b update cursorrules for session handoff
 8c4534a phase 1: bar, hist, count, terminal auto-detect, transpose
 27719ac first commit — fu: brutally fast terminal plotting CLI
@@ -206,12 +221,16 @@ Bar, hist, count subcommands. Terminal auto-detect. Transpose, axis labels.
 - [x] -C force color, -M monochrome
 - [x] --grid option
 - [x] --xlim, --ylim range limits
-- [x] Legend (series labels from headers)
+- [x] Legend (series labels from headers, right-aligned inline with data rows)
 - [x] PlotOptions struct to bundle rendering params
 - [x] Nice bounds (tight, range/16 step)
 - [x] Axis tick labels: x=bounds only, y=sparse nice ticks (uplot-style)
 - [x] Zero line rendering (⠤⠤⠤ when range crosses 0)
-- [x] DIM/reset ANSI codes for borders/labels
+- [x] DIM/reset ANSI codes for borders/labels (DIM=\x1b[90m, DIM_RESET=\x1b[39m)
+- [x] Visual parity with uplot: bar uses `■`, hist uses `▇` (render_barplot takes symbol param)
+- [x] Count alphabetical tiebreak when frequencies are equal
+- [x] Per-side Sides {top,right,bottom,left} for margin and padding (CSS shorthand)
+- [x] showcase/compare.sh — side-by-side visual comparison with uplot
 
 ### Phase 3: Canvas types, density, boxplot (NEXT)
 - [ ] Block canvas, ASCII canvas, density canvas, dot canvas
@@ -246,9 +265,12 @@ Bar, hist, count subcommands. Terminal auto-detect. Transpose, axis labels.
 - `make` — shows all targets
 - `make test` / `make lint` / `make ci` — testing and linting
 - `make bench` — criterion benchmarks
-- `make showcase` — run all showcase scripts (showcase/)
+- `make showcase` — run showcase/compare.sh (side-by-side fu vs uplot)
 - `make images` — regenerate README images (img/render.py)
-- `img/render.py` — regenerate README images after changes
+- `img/render.py` — render braille output to PNG (Pillow)
+- `showcase/compare.sh` — comparative visual tests: generates data, runs both
+  fu and uplot, prints side-by-side with timing. Add new test cases here
+  whenever new features or edge cases are found.
 
 ## Commit conventions
 

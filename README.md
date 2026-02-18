@@ -158,6 +158,8 @@ cat data.tsv | fu line -t "peek" | next_command
 -h HEIGHT     plot height in rows (default: terminal height)
 -o [FILE]     output to file or stdout (default: stderr)
 -n BINS       number of histogram bins (default: 10)
+-m MARGIN     per-side margin: 1, 2, or 4 values (default: 0,0,0,3)
+--padding PAD per-side padding: 1, 2, or 4 values (default: 0)
 -c COLOR      drawing color (name or 0-255 index)
 -C            force color output (even in pipes)
 -M            monochrome (no color even on tty)

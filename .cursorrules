@@ -94,6 +94,8 @@ this implementation detail in the README.
 
 ### Git history
 ```
+5e39884 regenerate README images, add margin/padding to docs
+6c56ff0 update cursorrules: git history, test count, API details, showcase tooling
 ac4e4e7 per-side layout: Sides {top,right,bottom,left} for margin and padding
 0b1901e phase 2: scatter, multi-series, color, axis labels
 e28551b update cursorrules for session handoff

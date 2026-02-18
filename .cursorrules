@@ -25,28 +25,36 @@ https://github.com/nrminor/youplot-rs — another Rust YouPlot clone. AI-generat
 bulk code, 3-crate workspace, claims full feature parity but no benchmarks or
 performance focus. Has `.agents/` directory. We're aware but running our own race.
 
-## Current state (after Phase 1)
+## Current state (after Phase 2 + axis refinement)
 
 ### What's implemented
 - **`fu line`** (aliases: `lineplot`, `l`) — braille canvas line chart with Bresenham
+- **`fu lines`** (alias: `lineplots`) — multi-series line chart (same renderer, explicit command)
+- **`fu scatter`** (alias: `s`) — scatter plot (dots without connecting lines)
 - **`fu bar`** (alias: `barplot`) — horizontal barplot with category labels
 - **`fu hist`** (alias: `histogram`) — auto-binning histogram, `-n` for bin count
 - **`fu count`** (alias: `c`) — occurrence counting sorted by frequency
 - **Terminal auto-detect** — width/height default to terminal size via raw ioctl
 - **Data parsing** — stdin/file, delimiter, headers, single/multi-column, transpose
-- **Options**: `-d`, `-H`, `-T`, `-t`, `-w`, `-h`, `-o`, `-n`, `--xlabel`, `--ylabel`
-- **44 tests**, clippy clean, fmt clean
+- **ANSI color** — 16 named + 256 indexed, auto-palette for multi-series, tty-aware
+- **Axis labels** — uplot-style: x-axis shows only bounds (min/max); y-axis uses
+  sparse nice ticks (1,2,5 family) with tight nice bounds (range/16 step)
+- **Options**: `-d`, `-H`, `-T`, `-t`, `-w`, `-h`, `-o`, `-n`, `-c`, `-C`, `-M`,
+  `--grid`, `--xlim`, `--ylim`, `--xlabel`, `--ylabel`
+- **Legend** — series labels from header row, colored markers, centered below plot
+- **64 tests**, clippy clean, fmt clean
 - **Benchmarks**: 30-35x faster than YouPlot on 10k-100k rows
 
 ### Source files
 ```
-src/main.rs    — CLI entry, arg parsing → data reading → rendering → output
-src/lib.rs     — module declarations
-src/cli.rs     — Command enum (Line/Bar/Hist/Count), Options struct, parse_from()
-src/data.rs    — DataSet (x/series), BarData (labels/values), parsers, transpose, binning
-src/canvas.rs  — BrailleCanvas (2x4 dot grid, Bresenham line drawing)
-src/plot.rs    — render_lineplot(), render_barplot(), render_frame()
-src/term.rs    — terminal size detection via ioctl (macOS + linux)
+src/main.rs    — CLI entry, arg parsing → color resolution → rendering → output (124 lines)
+src/lib.rs     — module declarations (6 lines)
+src/cli.rs     — Command enum (Line/Lines/Scatter/Bar/Hist/Count), Options struct, parse_from() (383 lines)
+src/color.rs   — Color enum, ColorMode (Off/Single/Auto), parse_color(), PALETTE, ANSI escapes (155 lines)
+src/data.rs    — DataSet (x/series), BarData (labels/values), parsers, transpose, binning (514 lines)
+src/canvas.rs  — BrailleCanvas (2x4 dot grid, Bresenham, per-cell color tracking) (245 lines)
+src/plot.rs    — PlotOptions, nice_num/nice_bounds, axis_ticks, render_*, render_frame, legend (803 lines)
+src/term.rs    — terminal size detection via ioctl (macOS + linux) (46 lines)
 ```
 
 ### README images
@@ -55,8 +63,23 @@ decoding the braille bitmasks and drawing square dots with Pillow. This exists
 because GitHub's code block font mangles braille characters. Do NOT mention
 this implementation detail in the README.
 
+### Axis tick design
+- **X-axis**: bounds only (min left-aligned, max right-aligned). No intermediates.
+  Matches uplot's clean style.
+- **Y-axis**: sparse nice ticks via `axis_ticks()` — evenly spaced multiples of
+  step from `nice_num(range/n_target, round=true)`. Step family: 1, 2, 5 × 10^n.
+  `n_target = (ch / 6).clamp(2, 5)` — very sparse, matching uplot density.
+  For sine wave (h=15, range -1..1): shows `1, 0, -1` (step=1).
+- **Nice bounds**: `nice_bounds_calc` uses `range/16` for tight padding (~5%).
+  E.g., data 0..6.28 → bounds 0..6.5 (not 0..7 like uplot).
+- Labels are discrete nice values at their nearest grid row. The aliasing error
+  (label says 0.5 but grid position is 0.43) is accepted — this is inherent to
+  coarse character grids. The alternative (grid-first exact values) produces ugly
+  non-round labels like 0.43, -0.57 which are worse.
+
 ### Git history
 ```
+e28551b update cursorrules for session handoff
 8c4534a phase 1: bar, hist, count, terminal auto-detect, transpose
 27719ac first commit — fu: brutally fast terminal plotting CLI
 ```
@@ -127,6 +150,9 @@ Binary: `uplot` (aliased from `youplot`).
 - Pass-through (-O): tee stdin to stdout while reading
 - Auto-detect terminal dimensions via ioctl
 - No heavy dependencies — do our own braille/block rendering
+- Axis labels: minimal, uplot-style. X-axis: bounds only. Y-axis: sparse nice
+  ticks (1,2,5 steps). Don't clutter with intermediates. Character grid is coarse;
+  accept the aliasing rather than showing ugly exact grid values.
 - Performance: parse + render should be <10ms for typical datasets,
   where YouPlot takes 200ms+ (Ruby startup alone)
 - **Tail mode**: `fu line --tail` or `fu line -f` reads from stdin or a file
@@ -143,17 +169,22 @@ CLI skeleton, data parsing, braille canvas, lineplot, Bresenham, frame rendering
 ### Phase 1: Bar, histogram, core options ✅
 Bar, hist, count subcommands. Terminal auto-detect. Transpose, axis labels.
 
-### Phase 2: Scatter, multi-series, color (NEXT)
-- [ ] Scatter plot (dots without connecting lines)
-- [ ] Multi-series line chart (lineplots/lines)
-- [ ] ANSI color support (-c flag, 16 named + 256 indexed)
-- [ ] Auto-assign colors to multi-series
-- [ ] -C force color, -M monochrome
-- [ ] --grid option
-- [ ] --xlim, --ylim range limits
-- [ ] Legend (series labels from headers)
+### Phase 2: Scatter, multi-series, color, axis labels ✅
+- [x] Scatter plot (dots without connecting lines)
+- [x] Multi-series line chart (lineplots/lines)
+- [x] ANSI color support (-c flag, 16 named + 256 indexed)
+- [x] Auto-assign colors to multi-series
+- [x] -C force color, -M monochrome
+- [x] --grid option
+- [x] --xlim, --ylim range limits
+- [x] Legend (series labels from headers)
+- [x] PlotOptions struct to bundle rendering params
+- [x] Nice bounds (tight, range/16 step)
+- [x] Axis tick labels: x=bounds only, y=sparse nice ticks (uplot-style)
+- [x] Zero line rendering (⠤⠤⠤ when range crosses 0)
+- [x] DIM/reset ANSI codes for borders/labels
 
-### Phase 3: Canvas types, density, boxplot
+### Phase 3: Canvas types, density, boxplot (NEXT)
 - [ ] Block canvas, ASCII canvas, density canvas, dot canvas
 - [ ] --canvas flag to select canvas type
 - [ ] Density plot (2D density estimation)
@@ -186,6 +217,8 @@ Bar, hist, count subcommands. Terminal auto-detect. Transpose, axis labels.
 - `make` — shows all targets
 - `make test` / `make lint` / `make ci` — testing and linting
 - `make bench` — criterion benchmarks
+- `make showcase` — run all showcase scripts (showcase/)
+- `make images` — regenerate README images (img/render.py)
 - `img/render.py` — regenerate README images after changes
 
 ## Commit conventions

@@ -1,3 +1,5 @@
+use crate::color::{self, Color};
+
 const BRAILLE_BASE: u32 = 0x2800;
 
 // Braille dot bit positions for (row, col) within a 4×2 cell.
@@ -9,14 +11,18 @@ pub struct BrailleCanvas {
     chars_wide: usize,
     chars_tall: usize,
     cells: Vec<u8>,
+    /// Per-cell color index into an external palette. None = no color assigned.
+    colors: Vec<Option<usize>>,
 }
 
 impl BrailleCanvas {
     pub fn new(chars_wide: usize, chars_tall: usize) -> Self {
+        let n = chars_wide * chars_tall;
         Self {
             chars_wide,
             chars_tall,
-            cells: vec![0u8; chars_wide * chars_tall],
+            cells: vec![0u8; n],
+            colors: vec![None; n],
         }
     }
 
@@ -37,6 +43,10 @@ impl BrailleCanvas {
     }
 
     pub fn set(&mut self, px: usize, py: usize) {
+        self.set_colored(px, py, None);
+    }
+
+    pub fn set_colored(&mut self, px: usize, py: usize, color_idx: Option<usize>) {
         let cx = px / 2;
         let cy = py / 4;
         if cx >= self.chars_wide || cy >= self.chars_tall {
@@ -44,7 +54,11 @@ impl BrailleCanvas {
         }
         let dot_col = px % 2;
         let dot_row = py % 4;
-        self.cells[cy * self.chars_wide + cx] |= BRAILLE_DOTS[dot_row][dot_col];
+        let idx = cy * self.chars_wide + cx;
+        self.cells[idx] |= BRAILLE_DOTS[dot_row][dot_col];
+        if color_idx.is_some() {
+            self.colors[idx] = color_idx;
+        }
     }
 
     pub fn row_chars(&self, row: usize) -> String {
@@ -56,7 +70,51 @@ impl BrailleCanvas {
             .collect()
     }
 
+    /// Render a row with ANSI color escapes. `palette` maps color indices to Colors.
+    pub fn row_chars_colored(&self, row: usize, palette: &[Color]) -> String {
+        let start = row * self.chars_wide;
+        let end = start + self.chars_wide;
+        let mut out = String::new();
+        let mut current_color: Option<usize> = None;
+
+        for i in start..end {
+            let bits = self.cells[i];
+            let ch = char::from_u32(BRAILLE_BASE + u32::from(bits)).unwrap_or(' ');
+            let cell_color = self.colors[i];
+
+            if cell_color != current_color {
+                if current_color.is_some() {
+                    out.push_str(color::RESET);
+                }
+                if let Some(ci) = cell_color
+                    && ci < palette.len()
+                {
+                    out.push_str(&palette[ci].fg_code());
+                }
+                current_color = cell_color;
+            }
+            out.push(ch);
+        }
+
+        if current_color.is_some() {
+            out.push_str(color::RESET);
+        }
+
+        out
+    }
+
     pub fn line(&mut self, x0: usize, y0: usize, x1: usize, y1: usize) {
+        self.line_colored(x0, y0, x1, y1, None);
+    }
+
+    pub fn line_colored(
+        &mut self,
+        x0: usize,
+        y0: usize,
+        x1: usize,
+        y1: usize,
+        color_idx: Option<usize>,
+    ) {
         let dx = (x1 as isize - x0 as isize).abs();
         let dy = -(y1 as isize - y0 as isize).abs();
         let sx: isize = if x0 < x1 { 1 } else { -1 };
@@ -67,7 +125,7 @@ impl BrailleCanvas {
 
         loop {
             if x >= 0 && y >= 0 {
-                self.set(x as usize, y as usize);
+                self.set_colored(x as usize, y as usize, color_idx);
             }
             if x == x1 as isize && y == y1 as isize {
                 break;

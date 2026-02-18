@@ -1,8 +1,12 @@
 use std::env;
 
+use crate::color::{self, Color};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Command {
     Line,
+    Lines,
+    Scatter,
     Bar,
     Hist,
     Count,
@@ -21,14 +25,20 @@ pub struct Options {
     pub delimiter: char,
     pub has_headers: bool,
     pub title: Option<String>,
-    pub width: usize,
-    pub height: usize,
+    pub width: Option<usize>,
+    pub height: Option<usize>,
     pub output: Output,
     pub files: Vec<String>,
     pub nbins: Option<usize>,
     pub xlabel: Option<String>,
     pub ylabel: Option<String>,
     pub transpose: bool,
+    pub color: Option<Color>,
+    pub force_color: bool,
+    pub monochrome: bool,
+    pub grid: bool,
+    pub xlim: Option<(f64, f64)>,
+    pub ylim: Option<(f64, f64)>,
 }
 
 impl Default for Options {
@@ -38,14 +48,20 @@ impl Default for Options {
             delimiter: '\t',
             has_headers: false,
             title: None,
-            width: 40,
-            height: 15,
+            width: None,
+            height: None,
             output: Output::Stderr,
             files: Vec::new(),
             nbins: None,
             xlabel: None,
             ylabel: None,
             transpose: false,
+            color: None,
+            force_color: false,
+            monochrome: false,
+            grid: false,
+            xlim: None,
+            ylim: None,
         }
     }
 }
@@ -65,6 +81,8 @@ pub fn parse_from(args: Vec<String>) -> Result<Options, String> {
 
     let command = match args[0].as_str() {
         "line" | "lineplot" | "l" => Command::Line,
+        "lines" | "lineplots" => Command::Lines,
+        "scatter" | "s" => Command::Scatter,
         "bar" | "barplot" => Command::Bar,
         "hist" | "histogram" => Command::Hist,
         "count" | "c" => Command::Count,
@@ -95,12 +113,12 @@ pub fn parse_from(args: Vec<String>) -> Result<Options, String> {
             "-w" | "--width" => {
                 i += 1;
                 let val = arg_value(&args, i, "-w")?;
-                opts.width = val.parse().map_err(|_| "-w must be a positive integer")?;
+                opts.width = Some(val.parse().map_err(|_| "-w must be a positive integer")?);
             }
             "-h" | "--height" => {
                 i += 1;
                 let val = arg_value(&args, i, "-h")?;
-                opts.height = val.parse().map_err(|_| "-h must be a positive integer")?;
+                opts.height = Some(val.parse().map_err(|_| "-h must be a positive integer")?);
             }
             "-T" | "--transpose" => {
                 opts.transpose = true;
@@ -112,6 +130,30 @@ pub fn parse_from(args: Vec<String>) -> Result<Options, String> {
             "--ylabel" => {
                 i += 1;
                 opts.ylabel = Some(arg_value(&args, i, "--ylabel")?);
+            }
+            "-c" | "--color" => {
+                i += 1;
+                let val = arg_value(&args, i, "-c")?;
+                opts.color = Some(color::parse_color(&val)?);
+            }
+            "--xlim" => {
+                i += 1;
+                let val = arg_value(&args, i, "--xlim")?;
+                opts.xlim = Some(parse_range(&val, "--xlim")?);
+            }
+            "--ylim" => {
+                i += 1;
+                let val = arg_value(&args, i, "--ylim")?;
+                opts.ylim = Some(parse_range(&val, "--ylim")?);
+            }
+            "--grid" => {
+                opts.grid = true;
+            }
+            "-C" | "--color-output" => {
+                opts.force_color = true;
+            }
+            "-M" | "--monochrome" => {
+                opts.monochrome = true;
             }
             "-n" | "--nbins" => {
                 i += 1;
@@ -144,6 +186,24 @@ pub fn parse_from(args: Vec<String>) -> Result<Options, String> {
     Ok(opts)
 }
 
+fn parse_range(s: &str, flag: &str) -> Result<(f64, f64), String> {
+    let parts: Vec<&str> = s.split(',').collect();
+    if parts.len() != 2 {
+        return Err(format!(
+            "{flag} requires two comma-separated numbers (e.g. 0,100)"
+        ));
+    }
+    let lo: f64 = parts[0]
+        .trim()
+        .parse()
+        .map_err(|_| format!("{flag}: cannot parse {0:?} as number", parts[0].trim()))?;
+    let hi: f64 = parts[1]
+        .trim()
+        .parse()
+        .map_err(|_| format!("{flag}: cannot parse {0:?} as number", parts[1].trim()))?;
+    Ok((lo, hi))
+}
+
 fn arg_value(args: &[String], i: usize, flag: &str) -> Result<String, String> {
     args.get(i)
         .cloned()
@@ -159,6 +219,8 @@ Usage:   fu <command> [options] <in.tsv>
 
 Commands:
     lineplot   line l  draw a line chart
+    lineplots  lines   draw multi-series line chart
+    scatter    s       draw a scatter plot
     barplot    bar     draw a horizontal bar chart
     histogram  hist    draw a histogram
     count      c       count occurrences and bar chart
@@ -166,10 +228,20 @@ Commands:
 General options:
     -d DELIM            field delimiter (default: tab)
     -H                  input has header row
+    -T                  transpose rows and columns
     -t TITLE            title above plot
     -w WIDTH            plot width in characters (default: 40)
     -h HEIGHT           plot height in rows (default: 15)
+    -n BINS             number of histogram bins (default: 10)
     -o [FILE]           output to file or stdout (default: stderr)
+    -c COLOR            drawing color (name or 0-255)
+    -C                  force color output in pipes
+    -M                  monochrome (no color)
+    --grid              show grid lines
+    --xlim MIN,MAX      x-axis range limits
+    --ylim MIN,MAX      y-axis range limits
+    --xlabel LABEL      x-axis label
+    --ylabel LABEL      y-axis label
     --help              print help menu"
         .to_string()
 }
@@ -206,8 +278,8 @@ mod tests {
         assert_eq!(opts.command, Command::Line);
         assert_eq!(opts.delimiter, '\t');
         assert!(!opts.has_headers);
-        assert_eq!(opts.width, 40);
-        assert_eq!(opts.height, 15);
+        assert_eq!(opts.width, None);
+        assert_eq!(opts.height, None);
         assert_eq!(opts.output, Output::Stderr);
     }
 
@@ -217,8 +289,8 @@ mod tests {
         assert_eq!(opts.delimiter, ',');
         assert!(opts.has_headers);
         assert_eq!(opts.title.as_deref(), Some("MyTitle"));
-        assert_eq!(opts.width, 60);
-        assert_eq!(opts.height, 20);
+        assert_eq!(opts.width, Some(60));
+        assert_eq!(opts.height, Some(20));
     }
 
     #[test]
@@ -276,6 +348,32 @@ mod tests {
         assert!(opts.transpose);
         assert_eq!(opts.xlabel.as_deref(), Some("Time"));
         assert_eq!(opts.ylabel.as_deref(), Some("Value"));
+    }
+
+    #[test]
+    fn parse_lines_command() {
+        let opts = parse_from(args("lines")).unwrap();
+        assert_eq!(opts.command, Command::Lines);
+    }
+
+    #[test]
+    fn parse_lineplots_alias() {
+        let opts = parse_from(args("lineplots -t Multi")).unwrap();
+        assert_eq!(opts.command, Command::Lines);
+        assert_eq!(opts.title.as_deref(), Some("Multi"));
+    }
+
+    #[test]
+    fn parse_scatter_command() {
+        let opts = parse_from(args("scatter")).unwrap();
+        assert_eq!(opts.command, Command::Scatter);
+    }
+
+    #[test]
+    fn parse_scatter_alias() {
+        let opts = parse_from(args("s -t Dots")).unwrap();
+        assert_eq!(opts.command, Command::Scatter);
+        assert_eq!(opts.title.as_deref(), Some("Dots"));
     }
 
     #[test]

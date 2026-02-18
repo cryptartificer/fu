@@ -1,14 +1,37 @@
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::process;
 
 use fu::cli::{self, Command, Output};
+use fu::color::{ColorMode, PALETTE};
 use fu::data;
-use fu::plot;
+use fu::plot::{self, PlotOptions};
 use fu::term;
 
+fn resolve_color(opts: &cli::Options) -> ColorMode {
+    if opts.monochrome {
+        return ColorMode::Off;
+    }
+
+    let output_is_tty = match &opts.output {
+        Output::Stderr => io::stderr().is_terminal(),
+        Output::Stdout => io::stdout().is_terminal(),
+        Output::File(_) => false,
+    };
+
+    if !opts.force_color && !output_is_tty {
+        return ColorMode::Off;
+    }
+
+    if let Some(c) = opts.color {
+        ColorMode::Single(c)
+    } else {
+        ColorMode::Auto(PALETTE.to_vec())
+    }
+}
+
 fn main() {
-    let mut opts = match cli::parse() {
+    let opts = match cli::parse() {
         Ok(o) => o,
         Err(msg) => {
             eprintln!("{msg}");
@@ -16,18 +39,21 @@ fn main() {
         }
     };
 
-    // Auto-detect terminal size if defaults weren't overridden
-    if let Some((cols, rows)) = term::size() {
-        if opts.width == 40 {
-            opts.width = cols.saturating_sub(4);
-        }
-        if opts.height == 15 {
-            opts.height = rows.saturating_sub(6).max(5);
-        }
-    }
+    // Resolve width/height: explicit flag > terminal auto-detect > fallback
+    let term_dims = term::size();
+    let width = opts
+        .width
+        .unwrap_or_else(|| term_dims.map(|(c, _)| c.saturating_sub(4)).unwrap_or(40));
+    let height = opts.height.unwrap_or_else(|| {
+        term_dims
+            .map(|(_, r)| r.saturating_sub(6).max(5))
+            .unwrap_or(15)
+    });
+
+    let color_mode = resolve_color(&opts);
 
     let rendered = match opts.command {
-        Command::Line => {
+        Command::Line | Command::Lines | Command::Scatter => {
             let dataset = match data::read_input(&opts) {
                 Ok(d) => d,
                 Err(e) => {
@@ -35,14 +61,21 @@ fn main() {
                     process::exit(1);
                 }
             };
-            plot::render_lineplot(
-                &dataset,
-                opts.width,
-                opts.height,
-                opts.title.as_deref(),
-                opts.xlabel.as_deref(),
-                opts.ylabel.as_deref(),
-            )
+            let plot_opts = PlotOptions {
+                width,
+                height,
+                title: opts.title.as_deref(),
+                xlabel: opts.xlabel.as_deref(),
+                ylabel: opts.ylabel.as_deref(),
+                color_mode: &color_mode,
+                grid: opts.grid,
+                xlim: opts.xlim,
+                ylim: opts.ylim,
+            };
+            match opts.command {
+                Command::Scatter => plot::render_scatter(&dataset, &plot_opts),
+                _ => plot::render_lineplot(&dataset, &plot_opts),
+            }
         }
         Command::Bar => {
             let bar_data = match data::read_bar_input(&opts) {
@@ -52,7 +85,7 @@ fn main() {
                     process::exit(1);
                 }
             };
-            plot::render_barplot(&bar_data, opts.width, opts.title.as_deref())
+            plot::render_barplot(&bar_data, width, opts.title.as_deref())
         }
         Command::Hist => {
             let values = match data::read_hist_input(&opts) {
@@ -64,7 +97,7 @@ fn main() {
             };
             let nbins = opts.nbins.unwrap_or(10);
             let bar_data = data::bin_values(&values, nbins);
-            plot::render_barplot(&bar_data, opts.width, opts.title.as_deref())
+            plot::render_barplot(&bar_data, width, opts.title.as_deref())
         }
         Command::Count => {
             let bar_data = match data::read_count_input(&opts) {
@@ -74,7 +107,7 @@ fn main() {
                     process::exit(1);
                 }
             };
-            plot::render_barplot(&bar_data, opts.width, opts.title.as_deref())
+            plot::render_barplot(&bar_data, width, opts.title.as_deref())
         }
     };
 

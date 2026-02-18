@@ -62,6 +62,18 @@ lint: fmt-check clippy
 bench:
 	$(CARGO) bench
 
+# ── Showcase & Images ─────────────────────────────────────────────
+
+.PHONY: showcase images
+
+showcase: release
+	@for f in showcase/[0-9]*.sh; do \
+		echo "" && echo "═══ Running $$f ═══" && echo "" && bash "$$f"; \
+	done
+
+images: release
+	@python3 img/render.py
+
 # ── Install / Uninstall ─────────────────────────────────────────
 
 .PHONY: install uninstall
@@ -150,6 +162,8 @@ help:
 	@echo ""
 	@echo "Run:"
 	@echo "  make run ARGS=..  Run fu with arguments"
+	@echo "  make showcase     Run showcase scripts (showcase/)"
+	@echo "  make images       Regenerate README images (img/)"
 	@echo ""
 	@echo "Other:"
 	@echo "  make ci           Full CI check (fmt, clippy, test)"

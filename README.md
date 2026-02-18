@@ -41,6 +41,34 @@ for i in range(500):
 
 <img src="img/random_walk.png" width="700" alt="Random walk plot">
 
+**Scatter plot** — 200 random points, no connecting lines
+
+```
+python3 -c '
+import random; random.seed(7)
+for _ in range(200):
+    x = random.gauss(50, 15)
+    y = random.gauss(50, 15)
+    print(f"{x:.2f}\t{y:.2f}")
+' | fu scatter -t "Random Cloud" -w 60 -h 16
+```
+
+<img src="img/scatter.png" width="650" alt="Scatter plot">
+
+**Multi-series line chart** — two series rendered together
+
+```
+python3 -c '
+import math
+for h in range(24):
+    temp = 20 + 8 * math.sin((h - 6) * math.pi / 12)
+    hum = 60 - 15 * math.sin((h - 6) * math.pi / 12)
+    print(f"{h}\t{temp:.1f}\t{hum:.1f}")
+' | fu lines -t "Temperature vs Humidity" -w 60 -h 14
+```
+
+<img src="img/multi_series.png" width="620" alt="Multi-series line chart">
+
 **Bar chart** — horizontal bars with category labels
 
 ```
@@ -113,6 +141,8 @@ cat data.tsv | fu line -t "peek" | next_command
 | Command | Aliases | Description |
 |---------|---------|-------------|
 | `line` | `lineplot`, `l` | Line chart |
+| `lines` | `lineplots` | Multi-series line chart |
+| `scatter` | `s` | Scatter plot (dots, no lines) |
 | `bar` | `barplot` | Horizontal bar chart |
 | `hist` | `histogram` | Histogram with auto-binning |
 | `count` | `c` | Count occurrences and bar chart |
@@ -128,9 +158,32 @@ cat data.tsv | fu line -t "peek" | next_command
 -h HEIGHT     plot height in rows (default: terminal height)
 -o [FILE]     output to file or stdout (default: stderr)
 -n BINS       number of histogram bins (default: 10)
+-c COLOR      drawing color (name or 0-255 index)
+-C            force color output (even in pipes)
+-M            monochrome (no color even on tty)
+--grid        draw horizontal grid lines
+--xlim MIN,MAX  x-axis range
+--ylim MIN,MAX  y-axis range
 --xlabel      x-axis label
 --ylabel      y-axis label
 ```
+
+## Showcase
+
+Run all demo scripts:
+
+```
+make showcase
+```
+
+Individual scripts in `showcase/`:
+
+| Script | Contents |
+|--------|----------|
+| `01-line-charts.sh` | Sine, damped oscillation, random walk, multi-series, grid + limits |
+| `02-scatter.sh` | Random cloud, spiral, multi-series clusters |
+| `03-bar-hist-count.sh` | Bar charts, normal + bimodal histograms, word/protocol counting |
+| `04-color-and-options.sh` | Named/indexed/auto color, monochrome, axis labels, transpose |
 
 ## Roadmap
 
@@ -138,9 +191,13 @@ cat data.tsv | fu line -t "peek" | next_command
 - [x] Bar chart, histogram, count
 - [x] Terminal size auto-detect
 - [x] Transpose, axis labels
-- [ ] Scatter, density, boxplot
-- [ ] Multi-series, color, legend
+- [x] Scatter plot
+- [x] Multi-series line chart
+- [x] ANSI color (16 named + 256 indexed)
+- [x] Auto-color palette, legend
+- [x] Grid, x/y-axis limits
 - [ ] Canvas types (block, ascii, density)
+- [ ] Density plot, boxplot
 - [ ] Tail mode — live-updating charts from streaming data
 - [ ] SVG output mode
 - [ ] Full YouPlot CLI compatibility

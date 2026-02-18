@@ -19,6 +19,66 @@ pub enum Output {
     File(String),
 }
 
+/// Per-side spacing (CSS shorthand order: top, right, bottom, left).
+/// Parsed from CLI as 1 value (all), 2 values (vertical, horizontal),
+/// or 4 values (top, right, bottom, left).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sides {
+    pub top: usize,
+    pub right: usize,
+    pub bottom: usize,
+    pub left: usize,
+}
+
+impl Sides {
+    pub fn all(v: usize) -> Self {
+        Self {
+            top: v,
+            right: v,
+            bottom: v,
+            left: v,
+        }
+    }
+
+    pub fn new(top: usize, right: usize, bottom: usize, left: usize) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+
+    pub fn vh(vertical: usize, horizontal: usize) -> Self {
+        Self {
+            top: vertical,
+            right: horizontal,
+            bottom: vertical,
+            left: horizontal,
+        }
+    }
+}
+
+fn parse_sides(s: &str, flag: &str) -> Result<Sides, String> {
+    let parts: Vec<&str> = s.split(',').collect();
+    let parse_one = |p: &str| -> Result<usize, String> {
+        p.trim()
+            .parse::<usize>()
+            .map_err(|_| format!("{flag}: {p:?} is not a non-negative integer"))
+    };
+    match parts.len() {
+        1 => Ok(Sides::all(parse_one(parts[0])?)),
+        2 => Ok(Sides::vh(parse_one(parts[0])?, parse_one(parts[1])?)),
+        4 => Ok(Sides::new(
+            parse_one(parts[0])?,
+            parse_one(parts[1])?,
+            parse_one(parts[2])?,
+            parse_one(parts[3])?,
+        )),
+        _ => Err(format!("{flag} takes 1, 2, or 4 comma-separated values")),
+    }
+}
+
 #[derive(Debug)]
 pub struct Options {
     pub command: Command,
@@ -39,6 +99,8 @@ pub struct Options {
     pub grid: bool,
     pub xlim: Option<(f64, f64)>,
     pub ylim: Option<(f64, f64)>,
+    pub margin: Option<Sides>,
+    pub padding: Option<Sides>,
 }
 
 impl Default for Options {
@@ -62,6 +124,8 @@ impl Default for Options {
             grid: false,
             xlim: None,
             ylim: None,
+            margin: None,
+            padding: None,
         }
     }
 }
@@ -155,6 +219,16 @@ pub fn parse_from(args: Vec<String>) -> Result<Options, String> {
             "-M" | "--monochrome" => {
                 opts.monochrome = true;
             }
+            "-m" | "--margin" => {
+                i += 1;
+                let val = arg_value(&args, i, "-m")?;
+                opts.margin = Some(parse_sides(&val, "-m")?);
+            }
+            "--padding" => {
+                i += 1;
+                let val = arg_value(&args, i, "--padding")?;
+                opts.padding = Some(parse_sides(&val, "--padding")?);
+            }
             "-n" | "--nbins" => {
                 i += 1;
                 let val = arg_value(&args, i, "-n")?;
@@ -234,6 +308,8 @@ General options:
     -h HEIGHT           plot height in rows (default: 15)
     -n BINS             number of histogram bins (default: 10)
     -o [FILE]           output to file or stdout (default: stderr)
+    -m MARGIN           margin: 1 val (all), 2 (v,h), 4 (t,r,b,l) (default: 0,0,0,3)
+    --padding PAD       padding: 1 val (all), 2 (v,h), 4 (t,r,b,l) (default: 0)
     -c COLOR            drawing color (name or 0-255)
     -C                  force color output in pipes
     -M                  monochrome (no color)
@@ -379,5 +455,39 @@ mod tests {
     #[test]
     fn parse_unknown_command_is_err() {
         assert!(parse_from(args("bogus")).is_err());
+    }
+
+    #[test]
+    fn parse_margin_single_value() {
+        let opts = parse_from(args("line -m 5")).unwrap();
+        assert_eq!(opts.margin, Some(Sides::all(5)));
+    }
+
+    #[test]
+    fn parse_margin_two_values() {
+        let opts = parse_from(args("line -m 1,2")).unwrap();
+        assert_eq!(opts.margin, Some(Sides::vh(1, 2)));
+    }
+
+    #[test]
+    fn parse_margin_four_values() {
+        let opts = parse_from(args("line -m 1,2,3,4")).unwrap();
+        assert_eq!(opts.margin, Some(Sides::new(1, 2, 3, 4)));
+    }
+
+    #[test]
+    fn parse_padding_four_values() {
+        let opts = parse_from(args("line --padding 0,1,0,2")).unwrap();
+        assert_eq!(opts.padding, Some(Sides::new(0, 1, 0, 2)));
+    }
+
+    #[test]
+    fn parse_margin_three_values_is_err() {
+        assert!(parse_from(args("line -m 1,2,3")).is_err());
+    }
+
+    #[test]
+    fn parse_margin_non_integer_is_err() {
+        assert!(parse_from(args("line -m abc")).is_err());
     }
 }

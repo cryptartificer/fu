@@ -25,36 +25,38 @@ https://github.com/nrminor/youplot-rs — another Rust YouPlot clone. AI-generat
 bulk code, 3-crate workspace, claims full feature parity but no benchmarks or
 performance focus. Has `.agents/` directory. We're aware but running our own race.
 
-## Current state (after Phase 2 + axis refinement)
+## Current state (after Phase 2 + visual parity + layout refactor)
 
 ### What's implemented
 - **`fu line`** (aliases: `lineplot`, `l`) — braille canvas line chart with Bresenham
 - **`fu lines`** (alias: `lineplots`) — multi-series line chart (same renderer, explicit command)
 - **`fu scatter`** (alias: `s`) — scatter plot (dots without connecting lines)
-- **`fu bar`** (alias: `barplot`) — horizontal barplot with category labels
-- **`fu hist`** (alias: `histogram`) — auto-binning histogram, `-n` for bin count
-- **`fu count`** (alias: `c`) — occurrence counting sorted by frequency
+- **`fu bar`** (alias: `barplot`) — horizontal barplot (`■`), category labels
+- **`fu hist`** (alias: `histogram`) — auto-binning histogram (`▇`), `-n` for bin count
+- **`fu count`** (alias: `c`) — occurrence counting sorted by frequency (`■`), alphabetical tiebreak
 - **Terminal auto-detect** — width/height default to terminal size via raw ioctl
 - **Data parsing** — stdin/file, delimiter, headers, single/multi-column, transpose
 - **ANSI color** — 16 named + 256 indexed, auto-palette for multi-series, tty-aware
 - **Axis labels** — uplot-style: x-axis shows only bounds (min/max); y-axis uses
   sparse nice ticks (1,2,5 family) with tight nice bounds (range/16 step)
+- **Layout** — per-side `Sides { top, right, bottom, left }` for both margin and
+  padding; CSS shorthand parsing (1, 2, or 4 comma-separated values)
 - **Options**: `-d`, `-H`, `-T`, `-t`, `-w`, `-h`, `-o`, `-n`, `-c`, `-C`, `-M`,
-  `--grid`, `--xlim`, `--ylim`, `--xlabel`, `--ylabel`
-- **Legend** — series labels from header row, colored markers, centered below plot
-- **64 tests**, clippy clean, fmt clean
+  `-m` (margin), `--padding`, `--grid`, `--xlim`, `--ylim`, `--xlabel`, `--ylabel`
+- **Legend** — series labels from header row, right-aligned inline with data rows (uplot style)
+- **65 tests**, clippy clean, fmt clean
 - **Benchmarks**: 30-35x faster than YouPlot on 10k-100k rows
 
 ### Source files
 ```
-src/main.rs    — CLI entry, arg parsing → color resolution → rendering → output (124 lines)
-src/lib.rs     — module declarations (6 lines)
-src/cli.rs     — Command enum (Line/Lines/Scatter/Bar/Hist/Count), Options struct, parse_from() (383 lines)
-src/color.rs   — Color enum, ColorMode (Off/Single/Auto), parse_color(), PALETTE, ANSI escapes (155 lines)
-src/data.rs    — DataSet (x/series), BarData (labels/values), parsers, transpose, binning (514 lines)
-src/canvas.rs  — BrailleCanvas (2x4 dot grid, Bresenham, per-cell color tracking) (245 lines)
-src/plot.rs    — PlotOptions, nice_num/nice_bounds, axis_ticks, render_*, render_frame, legend (803 lines)
-src/term.rs    — terminal size detection via ioctl (macOS + linux) (46 lines)
+src/main.rs    — CLI entry, color resolution, rendering dispatch, output
+src/lib.rs     — module declarations
+src/cli.rs     — Command enum, Sides struct, Options, parse_from(), parse_sides()
+src/color.rs   — Color enum, ColorMode (Off/Single/Auto), parse_color(), PALETTE, ANSI escapes
+src/data.rs    — DataSet (x/series), BarData (labels/values), parsers, transpose, binning
+src/canvas.rs  — BrailleCanvas (2x4 dot grid, Bresenham, per-cell color tracking)
+src/plot.rs    — PlotOptions, nice_num/nice_bounds, axis_ticks, render_*, render_frame
+src/term.rs    — terminal size detection via ioctl (macOS + linux)
 ```
 
 ### README images
@@ -115,8 +117,8 @@ Binary: `uplot` (aliased from `youplot`).
 -w, --width INT         characters per row
 -h, --height INT        number of rows
 -b, --border STR        border style (solid, corners, barplot)
--m, --margin INT        left margin spaces
-    --padding INT       left/right padding
+-m, --margin INT        margin spaces (uplot: left only)
+    --padding INT       padding (uplot: left/right only)
 -c, --color VAL         drawing color (name, 0-255)
     --[no-]labels       show/hide labels
 -p, --progress          progressive/streaming mode [experimental]
@@ -160,6 +162,33 @@ Binary: `uplot` (aliased from `youplot`).
   data arrives. Forces the entire parse → scale → render pipeline to be
   sub-millisecond so we can sustain 60fps. This is the marquee feature.
 - **SVG output** (future): optional `--svg` or `-o chart.svg` mode.
+
+### Layout model
+
+Margin and padding are per-side: `Sides { top, right, bottom, left }`. This is a
+layout primitive, not just a CLI knob. Each side has distinct semantics:
+
+- **margin.left**: gutter indent before labels/borders (default 3)
+- **margin.right**: trailing space after right border/legend
+- **margin.top/bottom**: blank lines outside the frame
+- **padding.left/right**: horizontal space inside │ borders, independent per side
+- **padding.top/bottom**: empty bordered rows inside ┌/└
+
+CLI accepts CSS shorthand: `3` (all), `1,2` (vertical,horizontal), `1,2,3,4`
+(top,right,bottom,left). Default margin: `0,0,0,3`. Default padding: `0`.
+
+Why per-side matters:
+- Different plot types need different default spacing.
+- Multi-plot layouts (stacked, tiled) require zeroing inner margins while keeping
+  outer ones — impossible with a scalar.
+- Composable layout is the foundation for subplots, dashboards, and anything that
+  combines plots. `Sides` is a brick in that wall.
+
+### Code philosophy
+
+Well-structured, composable, modular. Each module is self-contained with clear
+interfaces. No spaghetti, no leaky abstractions. Small units that compose into
+larger things without special-casing. Same discipline as the box model itself.
 
 ## Phased roadmap
 

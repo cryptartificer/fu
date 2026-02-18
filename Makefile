@@ -64,12 +64,15 @@ bench:
 
 # ── Showcase & Images ─────────────────────────────────────────────
 
-.PHONY: showcase images
+.PHONY: showcase compare images
 
 showcase: release
 	@for f in showcase/[0-9]*.sh; do \
 		echo "" && echo "═══ Running $$f ═══" && echo "" && bash "$$f"; \
 	done
+
+compare: release
+	@bash showcase/compare.sh $(ARGS)
 
 images: release
 	@python3 img/render.py
@@ -163,6 +166,7 @@ help:
 	@echo "Run:"
 	@echo "  make run ARGS=..  Run fu with arguments"
 	@echo "  make showcase     Run showcase scripts (showcase/)"
+	@echo "  make compare      Visual comparison: fu vs uplot"
 	@echo "  make images       Regenerate README images (img/)"
 	@echo ""
 	@echo "Other:"

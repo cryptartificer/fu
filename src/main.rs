@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{self, IsTerminal, Write};
 use std::process;
 
-use fu::cli::{self, Command, Output};
+use fu::cli::{self, Command, Output, Sides};
 use fu::color::{ColorMode, PALETTE};
 use fu::data;
 use fu::plot::{self, PlotOptions};
@@ -51,6 +51,8 @@ fn main() {
     });
 
     let color_mode = resolve_color(&opts);
+    let margin = opts.margin.unwrap_or(Sides::new(0, 0, 0, 3));
+    let padding = opts.padding.unwrap_or(Sides::all(0));
 
     let rendered = match opts.command {
         Command::Line | Command::Lines | Command::Scatter => {
@@ -71,6 +73,8 @@ fn main() {
                 grid: opts.grid,
                 xlim: opts.xlim,
                 ylim: opts.ylim,
+                margin,
+                padding,
             };
             match opts.command {
                 Command::Scatter => plot::render_scatter(&dataset, &plot_opts),
@@ -85,7 +89,15 @@ fn main() {
                     process::exit(1);
                 }
             };
-            plot::render_barplot(&bar_data, width, opts.title.as_deref())
+            plot::render_barplot(
+                &bar_data,
+                width,
+                opts.title.as_deref(),
+                &color_mode,
+                &margin,
+                &padding,
+                '■',
+            )
         }
         Command::Hist => {
             let values = match data::read_hist_input(&opts) {
@@ -97,7 +109,15 @@ fn main() {
             };
             let nbins = opts.nbins.unwrap_or(10);
             let bar_data = data::bin_values(&values, nbins);
-            plot::render_barplot(&bar_data, width, opts.title.as_deref())
+            plot::render_barplot(
+                &bar_data,
+                width,
+                opts.title.as_deref(),
+                &color_mode,
+                &margin,
+                &padding,
+                '▇',
+            )
         }
         Command::Count => {
             let bar_data = match data::read_count_input(&opts) {
@@ -107,7 +127,15 @@ fn main() {
                     process::exit(1);
                 }
             };
-            plot::render_barplot(&bar_data, width, opts.title.as_deref())
+            plot::render_barplot(
+                &bar_data,
+                width,
+                opts.title.as_deref(),
+                &color_mode,
+                &margin,
+                &padding,
+                '■',
+            )
         }
     };
 

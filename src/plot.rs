@@ -1,4 +1,5 @@
 use crate::canvas::BrailleCanvas;
+use crate::cli::Sides;
 use crate::color::ColorMode;
 use crate::data::{BarData, DataSet};
 
@@ -12,6 +13,8 @@ pub struct PlotOptions<'a> {
     pub grid: bool,
     pub xlim: Option<(f64, f64)>,
     pub ylim: Option<(f64, f64)>,
+    pub margin: Sides,
+    pub padding: Sides,
 }
 
 struct MappedData {
@@ -186,6 +189,8 @@ pub fn render_lineplot(data: &DataSet, opts: &PlotOptions) -> String {
         opts.ylabel,
         opts.color_mode,
         &legend,
+        &opts.margin,
+        &opts.padding,
     )
 }
 
@@ -217,6 +222,8 @@ pub fn render_scatter(data: &DataSet, opts: &PlotOptions) -> String {
         opts.ylabel,
         opts.color_mode,
         &legend,
+        &opts.margin,
+        &opts.padding,
     )
 }
 
@@ -286,10 +293,13 @@ fn render_frame(
     ylabel: Option<&str>,
     color_mode: &ColorMode,
     legend: &[String],
+    margin: &Sides,
+    padding: &Sides,
 ) -> String {
     let cw = canvas.chars_wide();
     let ch = canvas.chars_tall();
     let use_color = color_mode.is_enabled();
+    let palette = color_mode.palette();
 
     // Y-axis: sparse nice ticks (match uplot: just bounds + key values like zero)
     let n_y_target = (ch / 6).clamp(2, 5);
@@ -300,38 +310,83 @@ fn render_frame(
         .max()
         .unwrap_or(2);
 
-    let margin = y_label_width + 1;
+    // Gutter = margin.left + max_label_width + 1 (space before │)
+    let label_field = margin.left + y_label_width;
+    let gutter = label_field + 1;
+    let inner_width = padding.left + cw + padding.right;
+
+    // Right-side legend: build legend entries for rows to the right of │
+    let has_legend = use_color && !legend.is_empty();
+    let legend_width = if has_legend {
+        legend.iter().map(|l| l.len()).max().unwrap_or(0) + 1
+    } else {
+        0
+    };
+    let right_trail = legend_width.max(1) + margin.right;
+
+    let left_pad_str = " ".repeat(padding.left);
+    let right_pad_str = " ".repeat(padding.right);
+
     let mut out = String::new();
+
+    // margin.top
+    for _ in 0..margin.top {
+        out.push('\n');
+    }
 
     // Title
     if let Some(t) = title {
-        let total_width = margin + 1 + cw + 1;
+        let total_width = gutter + 1 + inner_width + 1 + right_trail;
         let pad = total_width.saturating_sub(t.len()) / 2;
         out.push_str(&" ".repeat(pad));
         out.push_str(t);
         out.push('\n');
     }
 
+    // Helper: emit an empty row inside the border (for padding.top / padding.bottom)
+    let emit_empty_inner_row = |out: &mut String| {
+        out.push_str(&" ".repeat(gutter));
+        if use_color {
+            out.push_str(DIM);
+        }
+        out.push('│');
+        if use_color {
+            out.push_str(DIM_RESET);
+        }
+        out.push_str(&" ".repeat(inner_width));
+        if use_color {
+            out.push_str(DIM);
+        }
+        out.push('│');
+        if use_color {
+            out.push_str(DIM_RESET);
+        }
+        out.push_str(&" ".repeat(right_trail));
+        out.push('\n');
+    };
+
     // Top border
-    out.push_str(&" ".repeat(margin));
+    out.push_str(&" ".repeat(gutter));
     if use_color {
         out.push_str(DIM);
     }
     out.push('┌');
-    for _ in 0..cw {
-        out.push('─');
-    }
+    out.push_str(&"─".repeat(inner_width));
     out.push('┐');
     if use_color {
         out.push_str(DIM_RESET);
     }
-    out.push_str(" \n");
+    out.push_str(&" ".repeat(right_trail));
+    out.push('\n');
+
+    // padding.top — empty bordered rows
+    for _ in 0..padding.top {
+        emit_empty_inner_row(&mut out);
+    }
 
     // Canvas rows
     let mid_row = ch / 2;
-    let palette = color_mode.palette();
     for row in 0..ch {
-        // Find tick label: y_ticks positions are 0=y_min..last=y_max, invert to row
         let last_y = ch.saturating_sub(1).max(1);
         let tick_label = y_ticks
             .iter()
@@ -339,19 +394,19 @@ fn render_frame(
             .map(|&(v, _)| format_val(v));
 
         let label = if let Some(ref tl) = tick_label {
-            format!("{:>w$}", tl, w = y_label_width)
+            format!("{:>w$}", tl, w = label_field)
         } else if row == mid_row && tick_label.is_none() {
             if let Some(yl) = ylabel {
-                if yl.len() <= y_label_width {
-                    format!("{:>w$}", yl, w = y_label_width)
+                if yl.len() <= label_field {
+                    format!("{:>w$}", yl, w = label_field)
                 } else {
-                    " ".repeat(y_label_width)
+                    " ".repeat(label_field)
                 }
             } else {
-                " ".repeat(y_label_width)
+                " ".repeat(label_field)
             }
         } else {
-            " ".repeat(y_label_width)
+            " ".repeat(label_field)
         };
 
         if use_color {
@@ -363,11 +418,13 @@ fn render_frame(
             out.push_str(&label);
             out.push_str(" │");
         }
+        out.push_str(&left_pad_str);
         if use_color {
             out.push_str(&canvas.row_chars_colored(row, &palette));
         } else {
             out.push_str(&canvas.row_chars(row));
         }
+        out.push_str(&right_pad_str);
         if use_color {
             out.push_str(DIM);
         }
@@ -375,35 +432,57 @@ fn render_frame(
         if use_color {
             out.push_str(DIM_RESET);
         }
-        out.push_str(" \n");
+
+        // Right-side legend label (uplot style) + margin.right
+        if has_legend && row < legend.len() {
+            out.push(' ');
+            if let Some(ci) = color_mode.series_color_idx(row)
+                && ci < palette.len()
+            {
+                out.push_str(&palette[ci].fg_code());
+            }
+            out.push_str(&legend[row]);
+            if color_mode.series_color_idx(row).is_some() {
+                out.push_str(crate::color::RESET);
+            }
+            let pad_needed = right_trail.saturating_sub(1 + legend[row].len());
+            if pad_needed > 0 {
+                out.push_str(&" ".repeat(pad_needed));
+            }
+        } else {
+            out.push_str(&" ".repeat(right_trail));
+        }
+        out.push('\n');
+    }
+
+    // padding.bottom — empty bordered rows
+    for _ in 0..padding.bottom {
+        emit_empty_inner_row(&mut out);
     }
 
     // Bottom border
-    out.push_str(&" ".repeat(margin));
+    out.push_str(&" ".repeat(gutter));
     if use_color {
         out.push_str(DIM);
     }
     out.push('└');
-    for _ in 0..cw {
-        out.push('─');
-    }
+    out.push_str(&"─".repeat(inner_width));
     out.push('┘');
     if use_color {
         out.push_str(DIM_RESET);
     }
-    out.push_str(" \n");
+    out.push_str(&" ".repeat(right_trail));
+    out.push('\n');
 
     // X-axis: just min and max at the edges (like uplot)
-    let x_area = cw + 2;
-    let x_total = margin + x_area;
+    let x_area = inner_width + 2;
+    let x_total = gutter + x_area;
     let mut x_buf = vec![b' '; x_total];
 
     let lo_label = format_val(x_min);
     let hi_label = format_val(x_max);
-    // Min: left-aligned at margin
-    let lo_end = (margin + lo_label.len()).min(x_total);
-    x_buf[margin..lo_end].copy_from_slice(&lo_label.as_bytes()[..lo_end - margin]);
-    // Max: right-aligned at right edge
+    let lo_end = (gutter + lo_label.len()).min(x_total);
+    x_buf[gutter..lo_end].copy_from_slice(&lo_label.as_bytes()[..lo_end - gutter]);
     let hi_start = x_total.saturating_sub(hi_label.len());
     x_buf[hi_start..x_total].copy_from_slice(hi_label.as_bytes());
     let x_line_str: String = x_buf.iter().map(|&b| b as char).collect();
@@ -422,53 +501,33 @@ fn render_frame(
 
     // xlabel
     if let Some(xl) = xlabel {
-        let total_width = margin + 1 + cw + 1;
+        let total_width = gutter + 1 + inner_width + 1;
         let pad = total_width.saturating_sub(xl.len()) / 2;
+        if use_color {
+            out.push_str(crate::color::RESET);
+        }
         out.push_str(&" ".repeat(pad));
         out.push_str(xl);
         out.push('\n');
     }
 
-    // Legend
-    if legend.len() > 1 || (legend.len() == 1 && use_color) {
-        let total_width = margin + 1 + cw + 1;
-        let mut legend_line = String::new();
-        for (i, label) in legend.iter().enumerate() {
-            if !legend_line.is_empty() {
-                legend_line.push_str("  ");
-            }
-            if let Some(ci) = color_mode.series_color_idx(i) {
-                if ci < palette.len() {
-                    legend_line.push_str(&palette[ci].fg_code());
-                    legend_line.push_str("━━");
-                    legend_line.push_str(crate::color::RESET);
-                } else {
-                    legend_line.push_str("━━");
-                }
-            } else {
-                legend_line.push_str("━━");
-            }
-            legend_line.push(' ');
-            legend_line.push_str(label);
-        }
-        let visible_len: usize = legend
-            .iter()
-            .enumerate()
-            .map(|(i, l)| {
-                let sep = if i > 0 { 2 } else { 0 };
-                sep + 3 + l.len()
-            })
-            .sum();
-        let pad = total_width.saturating_sub(visible_len) / 2;
-        out.push_str(&" ".repeat(pad));
-        out.push_str(&legend_line);
+    // margin.bottom
+    for _ in 0..margin.bottom {
         out.push('\n');
     }
 
     out
 }
 
-pub fn render_barplot(data: &BarData, width: usize, title: Option<&str>) -> String {
+pub fn render_barplot(
+    data: &BarData,
+    width: usize,
+    title: Option<&str>,
+    color_mode: &ColorMode,
+    margin: &Sides,
+    padding: &Sides,
+    symbol: char,
+) -> String {
     let max_val = data
         .values
         .iter()
@@ -477,37 +536,101 @@ pub fn render_barplot(data: &BarData, width: usize, title: Option<&str>) -> Stri
         .unwrap_or(1.0)
         .max(f64::MIN_POSITIVE);
 
-    let label_width = data.labels.iter().map(|l| l.len()).max().unwrap_or(0);
+    let use_color = color_mode.is_enabled();
+    let palette = color_mode.palette();
+    let max_label_len = data.labels.iter().map(|l| l.len()).max().unwrap_or(0);
+    let label_field = margin.left + max_label_len;
+    let gutter = label_field + 2; // label + " ┤"
     let val_labels: Vec<String> = data.values.iter().map(|&v| format_val(v)).collect();
     let max_val_label_len = val_labels.iter().map(|l| l.len()).max().unwrap_or(0);
 
-    // Bar area = total width - label - " ┤" - " " - val_label
     let bar_area = width
-        .saturating_sub(label_width + 3 + max_val_label_len)
+        .saturating_sub(
+            gutter + 1 + max_val_label_len + padding.left + padding.right + margin.right,
+        )
         .max(4);
+    let inner_width = padding.left + bar_area + 1 + max_val_label_len + padding.right;
+
+    let right_trail = margin.right.max(1);
 
     let mut out = String::new();
 
+    // margin.top
+    for _ in 0..margin.top {
+        out.push('\n');
+    }
+
     // Title
     if let Some(t) = title {
-        let total = label_width + 2 + bar_area + 1 + max_val_label_len;
+        let total = gutter + 1 + inner_width + 1 + right_trail;
         let pad = total.saturating_sub(t.len()) / 2;
         out.push_str(&" ".repeat(pad));
         out.push_str(t);
         out.push('\n');
     }
 
+    // Helper: emit an empty row inside the border (for padding.top / padding.bottom)
+    let emit_empty_inner_row = |out: &mut String| {
+        out.push_str(&" ".repeat(gutter));
+        if use_color {
+            out.push_str(DIM);
+        }
+        out.push('│');
+        if use_color {
+            out.push_str(DIM_RESET);
+        }
+        out.push_str(&" ".repeat(inner_width));
+        if use_color {
+            out.push_str(DIM);
+        }
+        out.push('│');
+        if use_color {
+            out.push_str(DIM_RESET);
+        }
+        out.push_str(&" ".repeat(right_trail));
+        out.push('\n');
+    };
+
     // Top border
-    out.push_str(&" ".repeat(label_width + 2));
+    out.push_str(&" ".repeat(gutter));
+    if use_color {
+        out.push_str(DIM);
+    }
     out.push('┌');
-    out.push_str(&" ".repeat(bar_area));
-    out.push_str("┐\n");
+    out.push_str(&" ".repeat(inner_width));
+    out.push('┐');
+    if use_color {
+        out.push_str(DIM_RESET);
+    }
+    out.push_str(&" ".repeat(right_trail));
+    out.push('\n');
+
+    // padding.top
+    for _ in 0..padding.top {
+        emit_empty_inner_row(&mut out);
+    }
 
     // Bars
+    let bar_color = if let Some(ci) = color_mode.series_color_idx(0) {
+        palette.get(ci).map(|c| c.fg_code())
+    } else {
+        None
+    };
+    let left_pad_str = " ".repeat(padding.left);
+
     for (i, (label, &val)) in data.labels.iter().zip(data.values.iter()).enumerate() {
-        // Right-aligned label
-        out.push_str(&format!("{:>w$}", label, w = label_width));
+        if use_color {
+            out.push_str(crate::color::RESET);
+        }
+        out.push_str(&format!("{:>w$}", label, w = label_field));
+        if use_color {
+            out.push_str(DIM);
+        }
         out.push_str(" ┤");
+        if use_color {
+            out.push_str(DIM_RESET);
+        }
+        out.push_str(&left_pad_str);
 
         let bar_len = if max_val > 0.0 {
             ((val / max_val) * bar_area as f64).round() as usize
@@ -515,22 +638,55 @@ pub fn render_barplot(data: &BarData, width: usize, title: Option<&str>) -> Stri
             0
         };
 
-        for _ in 0..bar_len {
-            out.push('█');
+        if let Some(ref fc) = bar_color {
+            out.push_str(fc);
+        }
+        out.push_str(&symbol.to_string().repeat(bar_len));
+        if bar_color.is_some() {
+            out.push_str(DIM_RESET);
         }
 
-        let gap = bar_area.saturating_sub(bar_len);
-        out.push_str(&" ".repeat(gap));
-        out.push_str("┤ ");
+        if use_color {
+            out.push_str(crate::color::RESET);
+        }
+        out.push(' ');
         out.push_str(&val_labels[i]);
+
+        let used = padding.left + bar_len + 1 + val_labels[i].len() + padding.right;
+        if used < inner_width {
+            out.push_str(&" ".repeat(inner_width - used));
+        }
+        if use_color {
+            out.push_str(DIM);
+            out.push_str(&" ".repeat(right_trail));
+            out.push_str(DIM_RESET);
+        }
         out.push('\n');
     }
 
+    // padding.bottom
+    for _ in 0..padding.bottom {
+        emit_empty_inner_row(&mut out);
+    }
+
     // Bottom border
-    out.push_str(&" ".repeat(label_width + 2));
+    out.push_str(&" ".repeat(gutter));
+    if use_color {
+        out.push_str(DIM);
+    }
     out.push('└');
-    out.push_str(&" ".repeat(bar_area));
-    out.push_str("┘\n");
+    out.push_str(&" ".repeat(inner_width));
+    out.push('┘');
+    if use_color {
+        out.push_str(DIM_RESET);
+    }
+    out.push_str(&" ".repeat(right_trail));
+    out.push('\n');
+
+    // margin.bottom
+    for _ in 0..margin.bottom {
+        out.push('\n');
+    }
 
     out
 }
@@ -538,6 +694,7 @@ pub fn render_barplot(data: &BarData, width: usize, title: Option<&str>) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::Sides;
     use crate::color::{Color, ColorMode};
     use crate::data::{BarData, DataSet};
 
@@ -554,6 +711,8 @@ mod tests {
             grid: false,
             xlim: None,
             ylim: None,
+            margin: Sides::all(0),
+            padding: Sides::all(0),
         }
     }
 
@@ -607,13 +766,21 @@ mod tests {
             labels: vec!["cat".into(), "dog".into(), "parrot".into()],
             values: vec![30.0, 45.0, 12.0],
         };
-        let output = render_barplot(&data, 40, Some("Animals"));
+        let output = render_barplot(
+            &data,
+            40,
+            Some("Animals"),
+            &OFF,
+            &Sides::all(0),
+            &Sides::all(0),
+            '■',
+        );
         assert!(output.contains("Animals"));
         assert!(output.contains("cat"));
         assert!(output.contains("dog"));
         assert!(output.contains("parrot"));
         assert!(output.contains("45"));
-        assert!(output.contains("█"));
+        assert!(output.contains('■'));
         assert!(output.contains("┤"));
     }
 
@@ -623,10 +790,10 @@ mod tests {
             labels: vec!["a".into(), "b".into()],
             values: vec![100.0, 50.0],
         };
-        let output = render_barplot(&data, 30, None);
+        let output = render_barplot(&data, 30, None, &OFF, &Sides::all(0), &Sides::all(0), '■');
         let lines: Vec<&str> = output.lines().collect();
-        let a_blocks = lines[1].matches('█').count();
-        let b_blocks = lines[2].matches('█').count();
+        let a_blocks = lines[1].matches('■').count();
+        let b_blocks = lines[2].matches('■').count();
         assert!(a_blocks > b_blocks);
     }
 
@@ -787,7 +954,6 @@ mod tests {
             output.contains("pressure"),
             "legend should contain series name 'pressure'"
         );
-        assert!(output.contains("━━"), "legend should contain line markers");
     }
 
     #[test]
@@ -798,6 +964,6 @@ mod tests {
             series: vec![vec![10.0, 20.0, 15.0], vec![5.0, 15.0, 25.0]],
         };
         let output = render_lineplot(&data, &opts(30, 8));
-        assert!(!output.contains("━━"), "no legend without headers");
+        assert!(!output.contains("temp"), "no legend without headers");
     }
 }

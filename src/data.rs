@@ -168,31 +168,39 @@ fn parse_hist_lines(
 }
 
 pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
-    let min = values.iter().cloned().reduce(f64::min).unwrap();
-    let max = values.iter().cloned().reduce(f64::max).unwrap();
-    let range = max - min;
-    let bin_width = if range > 0.0 {
-        range / nbins as f64
-    } else {
-        1.0
-    };
+    let raw_min = values.iter().cloned().reduce(f64::min).unwrap();
+    let raw_max = values.iter().cloned().reduce(f64::max).unwrap();
+    let range = raw_max - raw_min;
 
-    let mut counts = vec![0u64; nbins];
+    if range <= 0.0 {
+        let labels = vec![format!(
+            "[{}, {})",
+            format_compact(raw_min),
+            format_compact(raw_min + 1.0)
+        )];
+        let values = vec![values.len() as f64];
+        return BarData { labels, values };
+    }
+
+    // Snap bin width to a nice number so edges are round
+    let raw_width = range / nbins as f64;
+    let bin_width = nice_bin_width(raw_width);
+    let nice_lo = (raw_min / bin_width).floor() * bin_width;
+    let nice_hi = (raw_max / bin_width).ceil() * bin_width;
+    let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
+
+    let mut counts = vec![0u64; actual_bins];
     for &v in values {
-        let mut idx = if range > 0.0 {
-            ((v - min) / bin_width) as usize
-        } else {
-            0
-        };
-        if idx >= nbins {
-            idx = nbins - 1;
+        let mut idx = ((v - nice_lo) / bin_width) as usize;
+        if idx >= actual_bins {
+            idx = actual_bins - 1;
         }
         counts[idx] += 1;
     }
 
-    let labels: Vec<String> = (0..nbins)
+    let labels: Vec<String> = (0..actual_bins)
         .map(|i| {
-            let lo = min + i as f64 * bin_width;
+            let lo = nice_lo + i as f64 * bin_width;
             let hi = lo + bin_width;
             format!("[{}, {})", format_compact(lo), format_compact(hi))
         })
@@ -203,13 +211,29 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
     BarData { labels, values }
 }
 
-fn format_compact(v: f64) -> String {
-    if v == v.trunc() && v.abs() < 1e15 {
-        format!("{}", v as i64)
-    } else {
-        let s = format!("{:.1}", v);
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
+/// Round a raw bin width to a nice number (1, 2, 5 × 10^n).
+fn nice_bin_width(raw: f64) -> f64 {
+    if raw <= 0.0 {
+        return 1.0;
     }
+    let exp = raw.log10().floor();
+    let frac = raw / 10f64.powf(exp);
+    let nice = if frac < 1.5 {
+        1.0
+    } else if frac < 3.0 {
+        2.0
+    } else if frac < 7.0 {
+        5.0
+    } else {
+        10.0
+    };
+    nice * 10f64.powf(exp)
+}
+
+fn format_compact(v: f64) -> String {
+    let v = if v.abs() < 1e-10 { 0.0 } else { v };
+    // Always one decimal place for consistent label width (matches uplot)
+    format!("{:.1}", v)
 }
 
 pub fn read_count_input(opts: &Options) -> Result<BarData, String> {
@@ -247,8 +271,8 @@ fn parse_count_lines(
         return Err("no data".to_string());
     }
 
-    // Sort by count descending
-    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    // Sort by count descending, then alphabetically for ties
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     let labels = counts.iter().map(|(k, _)| k.clone()).collect();
     let values = counts.iter().map(|(_, v)| *v as f64).collect();
@@ -487,6 +511,18 @@ mod tests {
         assert_eq!(bd.values[1], 2.0);
         assert_eq!(bd.labels[2], "cherry");
         assert_eq!(bd.values[2], 1.0);
+    }
+
+    #[test]
+    fn count_tiebreak_alphabetical() {
+        let lines: Vec<String> = vec!["cat", "dog", "ant", "dog", "cat", "ant"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let bd = parse_count_lines(&lines, '\t', false).unwrap();
+        // All have count 2 — should be alphabetical
+        assert_eq!(bd.labels, vec!["ant", "cat", "dog"]);
+        assert!(bd.values.iter().all(|&v| v == 2.0));
     }
 
     #[test]

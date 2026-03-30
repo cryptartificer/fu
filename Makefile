@@ -1,4 +1,4 @@
-# fu — brutally fast plotting
+# fu — fast terminal plotting
 # ──────────────────────────────────────────────────────────────────
 
 CARGO   := cargo
@@ -140,7 +140,7 @@ loc:
 .PHONY: help
 
 help:
-	@echo "fu — brutally fast plotting"
+	@echo "fu — fast terminal plotting"
 	@echo ""
 	@echo "Build:"
 	@echo "  make              Build release binary"

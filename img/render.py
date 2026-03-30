@@ -200,6 +200,16 @@ charts = [
         "hist --log -t 'File Sizes (log bins)' -w 60 -h 15 -C -c green",
     ),
     (
+        "filtered_hist",
+        "python3 -c \"import random; random.seed(42); [print(random.gauss(50, 15)) for _ in range(10000)]\"",
+        "hist --gt 30 --lt 70 -t 'Normal (30 < x < 70)' -w 50 -n 12 -C -c green",
+    ),
+    (
+        "hist_100m",
+        "cat /tmp/g_100m.txt",
+        "hist -t '100M Points' -w 60 -n 20 -C -c magenta",
+    ),
+    (
         "multi_line",
         "python3 -c \"\nimport math\nprint('x\\tsin\\tcos')\nfor i in range(100):\n    t = i * math.pi / 25\n    print(f'{t:.3f}\\t{math.sin(t):.4f}\\t{math.cos(t):.4f}')\"",
         "lines -H -t 'sin vs cos' -w 70 -h 15 -C",

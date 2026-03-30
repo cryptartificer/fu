@@ -1,6 +1,6 @@
 # fu
 
-A brutally fast terminal plotting CLI — a Rust clone of [YouPlot](https://github.com/red-data-tools/YouPlot).
+A fast terminal plotting CLI — a Rust clone of [YouPlot](https://github.com/red-data-tools/YouPlot).
 
 Reads delimited data from stdin or files. Draws charts in the terminal using Unicode braille characters. Aims for call-compatible feature parity with `uplot`, then improvements.
 
@@ -13,7 +13,7 @@ python3 -c 'import math; [print(f"{i*math.pi/50}\t{math.sin(i*math.pi/50)}") for
 | fu line -t "Sine Wave" -w 70 -h 15
 ```
 
-<img src="img/sine.png" width="700" alt="Sine wave plot">
+<img src="img/sine.png" title="Rendered in 6 ms" width="700" alt="Sine wave plot">
 
 **Damped oscillation** — 200 data points, exponential decay envelope
 
@@ -26,7 +26,7 @@ for i in range(200):
 ' | fu line -t "Damped Oscillation" -w 70 -h 17
 ```
 
-<img src="img/damped.png" width="700" alt="Damped oscillation plot">
+<img src="img/damped.png" title="Rendered in 5 ms" width="700" alt="Damped oscillation plot">
 
 **Random walk** — 500 steps, Gaussian increments
 
@@ -39,7 +39,7 @@ for i in range(500):
 ' | fu line -t "Random Walk (500 steps)" -w 70 -h 20
 ```
 
-<img src="img/random_walk.png" width="700" alt="Random walk plot">
+<img src="img/random_walk.png" title="Rendered in 5 ms" width="700" alt="Random walk plot">
 
 **Scatter plot** — 200 random points, no connecting lines
 
@@ -53,7 +53,7 @@ for _ in range(200):
 ' | fu scatter -t "Random Cloud" -w 60 -h 16
 ```
 
-<img src="img/scatter.png" width="650" alt="Scatter plot">
+<img src="img/scatter.png" title="Rendered in 4 ms" width="650" alt="Scatter plot">
 
 **Multi-series line chart** — two series with right-side legend
 
@@ -68,7 +68,7 @@ for h in range(24):
 ' | fu lines -H -t "Temperature vs Humidity" -w 60 -h 14
 ```
 
-<img src="img/multi_series.png" width="620" alt="Multi-series line chart">
+<img src="img/multi_series.png" title="Rendered in 6 ms" width="620" alt="Multi-series line chart">
 
 **sin vs cos** — multi-series with auto-color and legend
 
@@ -82,7 +82,7 @@ for i in range(100):
 ' | fu lines -H -t "sin vs cos" -w 70 -h 15
 ```
 
-<img src="img/multi_line.png" width="700" alt="sin vs cos">
+<img src="img/multi_line.png" title="Rendered in 5 ms" width="700" alt="sin vs cos">
 
 **Bar chart** — horizontal bars with category labels
 
@@ -90,7 +90,7 @@ for i in range(100):
 printf "Rust\t48200\nGo\t7720\nPython\t4518\nC\t3912\n" | fu bar -t "GitHub Stars" -w 50
 ```
 
-<img src="img/bar.png" width="500" alt="Bar chart">
+<img src="img/bar.png" title="Rendered in 5 ms" width="500" alt="Bar chart">
 
 **Histogram** — automatic binning of continuous data
 
@@ -99,7 +99,7 @@ python3 -c 'import random; random.seed(42); [print(random.gauss(50, 15)) for _ i
 | fu hist -t "Normal Distribution" -w 60 -n 12
 ```
 
-<img src="img/hist.png" width="580" alt="Histogram">
+<img src="img/hist.png" title="Rendered in 4 ms" width="580" alt="Histogram">
 
 **Log-scale histogram** — 500 values across 3 decades, logarithmic bin edges
 
@@ -111,7 +111,27 @@ for _ in range(500):
 ' | fu hist --log -t "File Sizes (log bins)" -w 60 -h 15
 ```
 
-<img src="img/log_hist.png" width="580" alt="Log-scale histogram">
+<img src="img/log_hist.png" title="Rendered in 4 ms" width="580" alt="Log-scale histogram">
+
+**Filtered histogram** — zoom into a range with `--gt` / `--lt`
+
+```
+python3 -c '
+import random; random.seed(42)
+for _ in range(10000):
+    print(random.gauss(50, 15))
+' | fu hist --gt 30 --lt 70 -t "Normal (30 < x < 70)" -w 50 -n 12
+```
+
+<img src="img/filtered_hist.png" title="Rendered in 6 ms — 10,000 points" width="580" alt="Filtered histogram">
+
+**100 million points** — normal distribution, 20 bins
+
+```
+fu hist -t "100M Points" -w 60 -n 20 -c magenta data_100m.txt
+```
+
+<img src="img/hist_100m.png" title="Rendered in 2.2 s — 100,000,000 points" width="650" alt="100M point histogram">
 
 **Count** — occurrence counting, sorted by frequency
 
@@ -119,16 +139,33 @@ for _ in range(500):
 echo -e "tcp\ntcp\nudp\ntcp\nicmp\nudp" | fu count -t "Protocols" -w 45
 ```
 
-<img src="img/count.png" width="450" alt="Count chart">
+<img src="img/count.png" title="Rendered in 6 ms" width="450" alt="Count chart">
 
 ## Why
 
-YouPlot is great but it's Ruby. Every invocation pays ~200ms of startup tax before any data is touched. `fu` does the same job in single-digit milliseconds — even on 100k rows.
+YouPlot is great but every invocation pays interpreter startup and GC overhead. `fu` is compiled native code — no runtime, no warm-up.
 
-| Rows | fu | uplot | Speedup |
-|-----:|---:|------:|--------:|
-| 10k | 6ms | 180ms | **30x** |
-| 100k | 15ms | 521ms | **35x** |
+### Timing per chart type (100k rows, warm cache, file input)
+
+| Chart | fu | uplot | Speedup |
+|-------|---:|------:|--------:|
+| `hist` | 7ms | 389ms | **56x** |
+| `hist --log` | 8ms | — | — |
+| `hist` (filtered) | 7ms | — | — |
+| `line` | 15ms | 472ms | **31x** |
+| `lines` (multi-series) | 20ms | — | — |
+| `scatter` | 14ms | 441ms | **31x** |
+| `count` | 12ms | 319ms | **27x** |
+| `bar` (7 rows) | 5ms | — | — |
+
+### Histogram at scale (file input)
+
+| Rows | Time |
+|-----:|-----:|
+| 100k | 7ms |
+| 1M | 23ms |
+| 10M | 240ms |
+| 1B | 37s |
 
 ## Install
 
@@ -184,7 +221,7 @@ cat data.tsv | fu line -t "peek" | next_command
 -w WIDTH      plot width in characters (default: terminal width)
 -h HEIGHT     plot height in rows (default: terminal height)
 -o [FILE]     output to file or stdout (default: stderr)
--n BINS       number of histogram bins (default: 10)
+-n BINS       number of histogram bins (exact when set; default: ~10)
 -m MARGIN     per-side margin: 1, 2, or 4 values (default: 0,0,0,3)
 --padding PAD per-side padding: 1, 2, or 4 values (default: 0)
 -c COLOR      drawing color (name or 0-255 index)

@@ -305,7 +305,7 @@ fn arg_value(args: &[String], i: usize, flag: &str) -> Result<String, String> {
 
 fn usage() -> String {
     "\
-Program: fu (brutally fast terminal plotting)
+Program: fu (fast terminal plotting)
 Source:  https://github.com/CryptArtificer/fu
 
 Usage:   fu <command> [options] <in.tsv>

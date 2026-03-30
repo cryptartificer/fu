@@ -58,13 +58,13 @@ fn bench_bin_values(c: &mut Criterion) {
 
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::new("bin_values", n), &values, |b, values| {
-            b.iter(|| data::bin_values(values, 10));
+            b.iter(|| data::bin_values(values, 10, false));
         });
         group.bench_with_input(
             BenchmarkId::new("bin_values_log", n),
             &values,
             |b, values| {
-                b.iter(|| data::bin_values_log(values, 10).unwrap());
+                b.iter(|| data::bin_values_log(values, 10, false).unwrap());
             },
         );
     }
@@ -122,8 +122,17 @@ fn bench_fast_path(c: &mut Criterion) {
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::new("hist_from_bytes", n), &text, |b, text| {
             b.iter(|| {
-                fu::hist::hist_from_bytes(text.as_bytes(), b'\t', false, None, None, false, 10)
-                    .unwrap()
+                fu::hist::hist_from_bytes(
+                    text.as_bytes(),
+                    b'\t',
+                    false,
+                    None,
+                    None,
+                    false,
+                    10,
+                    false,
+                )
+                .unwrap()
             });
         });
         group.bench_with_input(
@@ -131,8 +140,17 @@ fn bench_fast_path(c: &mut Criterion) {
             &text,
             |b, text| {
                 b.iter(|| {
-                    fu::hist::hist_from_bytes(text.as_bytes(), b'\t', false, None, None, true, 10)
-                        .unwrap()
+                    fu::hist::hist_from_bytes(
+                        text.as_bytes(),
+                        b'\t',
+                        false,
+                        None,
+                        None,
+                        true,
+                        10,
+                        false,
+                    )
+                    .unwrap()
                 });
             },
         );
@@ -149,6 +167,7 @@ fn bench_fast_path(c: &mut Criterion) {
                         Some(70.0),
                         false,
                         10,
+                        false,
                     )
                     .unwrap()
                 });

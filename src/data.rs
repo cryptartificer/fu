@@ -167,7 +167,7 @@ fn parse_hist_lines(
     Ok(values)
 }
 
-pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
+pub fn bin_values(values: &[f64], nbins: usize, exact_n: bool) -> BarData {
     let raw_min = values.iter().cloned().reduce(f64::min).unwrap();
     let raw_max = values.iter().cloned().reduce(f64::max).unwrap();
     let range = raw_max - raw_min;
@@ -179,15 +179,11 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
         return BarData { labels, values };
     }
 
-    // Pick the nicest bin width that best preserves the requested count.
-    let bin_width = okay_bin_width(range / nbins as f64);
-    let nice_lo = (raw_min / bin_width).floor() * bin_width;
-    let nice_hi = (raw_max / bin_width).ceil() * bin_width;
-    let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
+    let (bin_width, bin_lo, actual_bins) = choose_bins(raw_min, raw_max, nbins, exact_n);
 
     let mut counts = vec![0u64; actual_bins];
     for &v in values {
-        let mut idx = ((v - nice_lo) / bin_width) as usize;
+        let mut idx = ((v - bin_lo) / bin_width) as usize;
         if idx >= actual_bins {
             idx = actual_bins - 1;
         }
@@ -196,7 +192,7 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
 
     let edges: Vec<(String, String)> = (0..actual_bins)
         .map(|i| {
-            let lo = nice_lo + i as f64 * bin_width;
+            let lo = bin_lo + i as f64 * bin_width;
             let hi = lo + bin_width;
             (format_compact(lo), format_compact(hi))
         })
@@ -218,7 +214,7 @@ pub fn filter_values(mut values: Vec<f64>, gt: Option<f64>, lt: Option<f64>) -> 
     values
 }
 
-pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
+pub fn bin_values_log(values: &[f64], nbins: usize, exact_n: bool) -> Result<BarData, String> {
     for &v in values {
         if v <= 0.0 {
             return Err(format!("--log requires all values > 0 (found {v})"));
@@ -238,14 +234,11 @@ pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
         return Ok(BarData { labels, values });
     }
 
-    let bin_width = okay_bin_width(range / nbins as f64);
-    let nice_lo = (raw_min / bin_width).floor() * bin_width;
-    let nice_hi = (raw_max / bin_width).ceil() * bin_width;
-    let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
+    let (bin_width, bin_lo, actual_bins) = choose_bins(raw_min, raw_max, nbins, exact_n);
 
     let mut counts = vec![0u64; actual_bins];
     for &lv in &log_vals {
-        let mut idx = ((lv - nice_lo) / bin_width) as usize;
+        let mut idx = ((lv - bin_lo) / bin_width) as usize;
         if idx >= actual_bins {
             idx = actual_bins - 1;
         }
@@ -254,8 +247,8 @@ pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
 
     let edges: Vec<(String, String)> = (0..actual_bins)
         .map(|i| {
-            let lo = 10f64.powf(nice_lo + i as f64 * bin_width);
-            let hi = 10f64.powf(nice_lo + (i + 1) as f64 * bin_width);
+            let lo = 10f64.powf(bin_lo + i as f64 * bin_width);
+            let hi = 10f64.powf(bin_lo + (i + 1) as f64 * bin_width);
             (format_compact(lo), format_compact(hi))
         })
         .collect();
@@ -279,9 +272,26 @@ fn format_bin_labels(edges: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
-/// Round a bin width to a reasonably round number.
-/// Denser than classic 1/2/5: snaps to {1, 2, 2.5, 3, 4, 5, 8} × 10^k
-/// so the resulting bin count stays close to what was requested.
+/// Round to a classic nice number: {1, 2, 5} × 10^k.
+fn nice_bin_width(raw: f64) -> f64 {
+    if raw <= 0.0 {
+        return 1.0;
+    }
+    let exp = raw.log10().floor();
+    let frac = raw / 10f64.powf(exp);
+    let nice = if frac < 1.5 {
+        1.0
+    } else if frac < 3.0 {
+        2.0
+    } else if frac < 7.0 {
+        5.0
+    } else {
+        10.0
+    };
+    nice * 10f64.powf(exp)
+}
+
+/// Round to a denser set: {1, 2, 2.5, 3, 4, 5, 8} × 10^k.
 fn okay_bin_width(raw: f64) -> f64 {
     if raw <= 0.0 {
         return 1.0;
@@ -306,6 +316,42 @@ fn okay_bin_width(raw: f64) -> f64 {
         10.0
     };
     nice * 10f64.powf(exp)
+}
+
+/// Choose bin width, starting origin, and count.
+/// When `exact_n`: tries nice → okay → exact to guarantee exactly `nbins`.
+/// Otherwise: nice snapping only.
+/// Returns (bin_width, bin_lo, actual_bins).
+fn choose_bins(raw_min: f64, raw_max: f64, nbins: usize, exact_n: bool) -> (f64, f64, usize) {
+    let range = raw_max - raw_min;
+    let raw_width = range / nbins as f64;
+
+    if !exact_n {
+        let w = nice_bin_width(raw_width);
+        let lo = (raw_min / w).floor() * w;
+        let hi = (raw_max / w).ceil() * w;
+        let n = ((hi - lo) / w).round() as usize;
+        return (w, lo, n);
+    }
+
+    // Tier 1: nice (1, 2, 5 × 10^k)
+    let w = nice_bin_width(raw_width);
+    let lo = (raw_min / w).floor() * w;
+    let hi = (raw_max / w).ceil() * w;
+    if ((hi - lo) / w).round() as usize == nbins {
+        return (w, lo, nbins);
+    }
+
+    // Tier 2: okay (denser set)
+    let w = okay_bin_width(raw_width);
+    let lo = (raw_min / w).floor() * w;
+    let hi = (raw_max / w).ceil() * w;
+    if ((hi - lo) / w).round() as usize == nbins {
+        return (w, lo, nbins);
+    }
+
+    // Tier 3: exact — use raw_min as origin, exact count
+    (raw_width, raw_min, nbins)
 }
 
 fn format_compact(v: f64) -> String {
@@ -569,7 +615,7 @@ mod tests {
     #[test]
     fn bin_values_basic() {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let bd = bin_values(&values, 5);
+        let bd = bin_values(&values, 5, false);
         assert_eq!(bd.labels.len(), 5);
         assert_eq!(bd.values.len(), 5);
         let total: f64 = bd.values.iter().sum();
@@ -664,7 +710,7 @@ mod tests {
     #[test]
     fn bin_values_log_basic() {
         let vals: Vec<f64> = (0..300).map(|i| 10f64.powf(i as f64 / 100.0)).collect();
-        let bar = bin_values_log(&vals, 6).unwrap();
+        let bar = bin_values_log(&vals, 6, false).unwrap();
         let total: f64 = bar.values.iter().sum();
         assert_eq!(total, 300.0);
         assert!(bar.labels[0].starts_with('['));
@@ -675,7 +721,7 @@ mod tests {
     #[test]
     fn bin_values_log_single_decade() {
         let vals = vec![1.0, 2.0, 3.0, 5.0, 7.0, 9.0];
-        let bar = bin_values_log(&vals, 4).unwrap();
+        let bar = bin_values_log(&vals, 4, false).unwrap();
         let total: f64 = bar.values.iter().sum();
         assert_eq!(total, 6.0);
     }
@@ -683,7 +729,7 @@ mod tests {
     #[test]
     fn bin_values_log_negative_errors() {
         let vals = vec![1.0, -5.0, 10.0];
-        let result = bin_values_log(&vals, 5);
+        let result = bin_values_log(&vals, 5, false);
         assert!(result.is_err());
         assert!(
             result
@@ -695,14 +741,14 @@ mod tests {
     #[test]
     fn bin_values_log_zero_errors() {
         let vals = vec![0.0, 1.0, 10.0];
-        let result = bin_values_log(&vals, 5);
+        let result = bin_values_log(&vals, 5, false);
         assert!(result.is_err());
     }
 
     #[test]
     fn bin_values_log_all_same() {
         let vals = vec![100.0, 100.0, 100.0];
-        let bar = bin_values_log(&vals, 5).unwrap();
+        let bar = bin_values_log(&vals, 5, false).unwrap();
         let total: f64 = bar.values.iter().sum();
         assert_eq!(total, 3.0);
     }

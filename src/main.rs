@@ -104,6 +104,7 @@ fn main() {
             )
         }
         Command::Hist => {
+            let exact_n = opts.nbins.is_some();
             let nbins = opts.nbins.unwrap_or(10);
             let delimiter = opts.delimiter as u8;
             let bar_data = if opts.files.is_empty() {
@@ -114,6 +115,7 @@ fn main() {
                     opts.lt,
                     opts.log_scale,
                     nbins,
+                    exact_n,
                 )
             } else if opts.files.len() == 1 {
                 fu::hist::hist_from_file(
@@ -124,6 +126,7 @@ fn main() {
                     opts.lt,
                     opts.log_scale,
                     nbins,
+                    exact_n,
                 )
             } else {
                 let mut buf = Vec::new();
@@ -149,6 +152,7 @@ fn main() {
                     opts.lt,
                     opts.log_scale,
                     nbins,
+                    exact_n,
                 )
             };
             match bar_data {

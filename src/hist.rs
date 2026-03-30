@@ -21,6 +21,7 @@ fn first_field(line: &[u8], delimiter: u8) -> &[u8] {
 
 /// Fast histogram pipeline: byte-level parsing, no per-line String allocation.
 /// Produces identical output to the existing read_hist_input → filter → bin pipeline.
+#[allow(clippy::too_many_arguments)]
 pub fn hist_from_bytes(
     bytes: &[u8],
     delimiter: u8,
@@ -29,6 +30,7 @@ pub fn hist_from_bytes(
     lt: Option<f64>,
     log_scale: bool,
     nbins: usize,
+    exact_n: bool,
 ) -> Result<BarData, String> {
     let mut line_starts: Vec<usize> = vec![0];
     for pos in memchr_iter(b'\n', bytes) {
@@ -91,13 +93,14 @@ pub fn hist_from_bytes(
     }
 
     if log_scale {
-        data::bin_values_log(&values, nbins)
+        data::bin_values_log(&values, nbins, exact_n)
     } else {
-        Ok(data::bin_values(&values, nbins))
+        Ok(data::bin_values(&values, nbins, exact_n))
     }
 }
 
 /// Read from a file using mmap and run the fast histogram pipeline.
+#[allow(clippy::too_many_arguments)]
 pub fn hist_from_file(
     path: &str,
     delimiter: u8,
@@ -106,10 +109,20 @@ pub fn hist_from_file(
     lt: Option<f64>,
     log_scale: bool,
     nbins: usize,
+    exact_n: bool,
 ) -> Result<BarData, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
     let mmap = unsafe { memmap2::Mmap::map(&file) }.map_err(|e| format!("{path}: mmap: {e}"))?;
-    hist_from_bytes(&mmap, delimiter, has_headers, gt, lt, log_scale, nbins)
+    hist_from_bytes(
+        &mmap,
+        delimiter,
+        has_headers,
+        gt,
+        lt,
+        log_scale,
+        nbins,
+        exact_n,
+    )
 }
 
 /// Read from stdin into a byte buffer and run the fast histogram pipeline.
@@ -120,6 +133,7 @@ pub fn hist_from_stdin(
     lt: Option<f64>,
     log_scale: bool,
     nbins: usize,
+    exact_n: bool,
 ) -> Result<BarData, String> {
     use std::io::Read;
     let mut buf = Vec::new();
@@ -127,7 +141,16 @@ pub fn hist_from_stdin(
         .lock()
         .read_to_end(&mut buf)
         .map_err(|e| e.to_string())?;
-    hist_from_bytes(&buf, delimiter, has_headers, gt, lt, log_scale, nbins)
+    hist_from_bytes(
+        &buf,
+        delimiter,
+        has_headers,
+        gt,
+        lt,
+        log_scale,
+        nbins,
+        exact_n,
+    )
 }
 
 #[cfg(test)]
@@ -157,7 +180,7 @@ mod tests {
             let field = line.split('\t').next().unwrap_or("").trim();
             values.push(field.parse::<f64>().unwrap());
         }
-        data::bin_values(&values, nbins)
+        data::bin_values(&values, nbins, false)
     }
 
     fn old_pipeline_log(text: &str, nbins: usize) -> BarData {
@@ -167,7 +190,7 @@ mod tests {
             let field = line.split('\t').next().unwrap_or("").trim();
             values.push(field.parse::<f64>().unwrap());
         }
-        data::bin_values_log(&values, nbins).unwrap()
+        data::bin_values_log(&values, nbins, false).unwrap()
     }
 
     fn old_pipeline_filtered(
@@ -183,14 +206,15 @@ mod tests {
             values.push(field.parse::<f64>().unwrap());
         }
         let values = data::filter_values(values, gt, lt);
-        data::bin_values(&values, nbins)
+        data::bin_values(&values, nbins, false)
     }
 
     #[test]
     fn equivalence_linear_10k() {
         let text = generate_test_data(10_000);
         let old = old_pipeline(&text, 10);
-        let new = hist_from_bytes(text.as_bytes(), b'\t', false, None, None, false, 10).unwrap();
+        let new =
+            hist_from_bytes(text.as_bytes(), b'\t', false, None, None, false, 10, false).unwrap();
         assert_eq!(old.labels, new.labels);
         assert_eq!(old.values, new.values);
     }
@@ -199,7 +223,8 @@ mod tests {
     fn equivalence_linear_100k() {
         let text = generate_test_data(100_000);
         let old = old_pipeline(&text, 20);
-        let new = hist_from_bytes(text.as_bytes(), b'\t', false, None, None, false, 20).unwrap();
+        let new =
+            hist_from_bytes(text.as_bytes(), b'\t', false, None, None, false, 20, false).unwrap();
         assert_eq!(old.labels, new.labels);
         assert_eq!(old.values, new.values);
     }
@@ -215,7 +240,8 @@ mod tests {
         }
         let text = lines.join("\n");
         let old = old_pipeline_log(&text, 10);
-        let new = hist_from_bytes(text.as_bytes(), b'\t', false, None, None, true, 10).unwrap();
+        let new =
+            hist_from_bytes(text.as_bytes(), b'\t', false, None, None, true, 10, false).unwrap();
         assert_eq!(old.labels, new.labels);
         assert_eq!(old.values, new.values);
     }
@@ -232,6 +258,7 @@ mod tests {
             Some(70.0),
             false,
             10,
+            false,
         )
         .unwrap();
         assert_eq!(old.labels, new.labels);
@@ -242,7 +269,8 @@ mod tests {
     fn equivalence_with_headers() {
         let text = format!("value\n{}", generate_test_data(1_000));
         let old = old_pipeline(&text.lines().skip(1).collect::<Vec<_>>().join("\n"), 10);
-        let new = hist_from_bytes(text.as_bytes(), b'\t', true, None, None, false, 10).unwrap();
+        let new =
+            hist_from_bytes(text.as_bytes(), b'\t', true, None, None, false, 10, false).unwrap();
         assert_eq!(old.labels, new.labels);
         assert_eq!(old.values, new.values);
     }
@@ -263,27 +291,28 @@ mod tests {
             let field = line.split(',').next().unwrap_or("").trim();
             values.push(field.parse::<f64>().unwrap());
         }
-        let old = data::bin_values(&values, 10);
-        let new = hist_from_bytes(text.as_bytes(), b',', false, None, None, false, 10).unwrap();
+        let old = data::bin_values(&values, 10, false);
+        let new =
+            hist_from_bytes(text.as_bytes(), b',', false, None, None, false, 10, false).unwrap();
         assert_eq!(old.labels, new.labels);
         assert_eq!(old.values, new.values);
     }
 
     #[test]
     fn error_on_empty() {
-        let result = hist_from_bytes(b"", b'\t', false, None, None, false, 10);
+        let result = hist_from_bytes(b"", b'\t', false, None, None, false, 10, false);
         assert!(result.is_err());
     }
 
     #[test]
     fn error_on_bad_number() {
-        let result = hist_from_bytes(b"abc\n", b'\t', false, None, None, false, 10);
+        let result = hist_from_bytes(b"abc\n", b'\t', false, None, None, false, 10, false);
         assert!(result.is_err());
     }
 
     #[test]
     fn error_log_negative() {
-        let result = hist_from_bytes(b"-1.0\n2.0\n", b'\t', false, None, None, true, 10);
+        let result = hist_from_bytes(b"-1.0\n2.0\n", b'\t', false, None, None, true, 10, false);
         assert!(result.is_err());
     }
 

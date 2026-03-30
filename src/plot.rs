@@ -687,11 +687,11 @@ pub fn render_barplot(
     out.push_str(&" ".repeat(right_trail));
     out.push('\n');
 
-    // Frequency label centered under bar area
+    // Frequency label centered same as title
     {
         let freq = "Frequency";
-        let bar_center = gutter + padding.left + bar_area / 2;
-        let pad = bar_center.saturating_sub(freq.len() / 2);
+        let total = gutter + 1 + inner_width + 1 + right_trail;
+        let pad = total.saturating_sub(freq.len()) / 2;
         out.push_str(&" ".repeat(pad));
         out.push_str(freq);
         out.push('\n');

@@ -51,7 +51,11 @@ fn main() {
     });
 
     let color_mode = resolve_color(&opts);
-    let margin = opts.margin.unwrap_or(Sides::new(0, 0, 0, 3));
+    let default_margin = match opts.command {
+        Command::Bar | Command::Hist | Command::Count => Sides::all(0),
+        _ => Sides::new(0, 0, 0, 3),
+    };
+    let margin = opts.margin.unwrap_or(default_margin);
     let padding = opts.padding.unwrap_or(Sides::all(0));
 
     let rendered = match opts.command {

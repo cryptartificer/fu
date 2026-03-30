@@ -9,6 +9,9 @@ keywords = ["plot", "chart", "terminal", "cli", "unicode"]
 categories = ["command-line-utilities", "visualization"]
 
 [dependencies]
+fast-float = "0.2"
+memchr = "2"
+memmap2 = "0.9"
 
 [dev-dependencies]
 criterion = "0.5"

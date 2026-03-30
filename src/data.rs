@@ -179,9 +179,8 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
         return BarData { labels, values };
     }
 
-    // Snap bin width to a nice number so edges are round
-    let raw_width = range / nbins as f64;
-    let bin_width = nice_bin_width(raw_width);
+    // Pick the nicest bin width that best preserves the requested count.
+    let bin_width = best_nice_width(range, nbins);
     let nice_lo = (raw_min / bin_width).floor() * bin_width;
     let nice_hi = (raw_max / bin_width).ceil() * bin_width;
     let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
@@ -239,8 +238,7 @@ pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
         return Ok(BarData { labels, values });
     }
 
-    let raw_width = range / nbins as f64;
-    let bin_width = nice_bin_width(raw_width);
+    let bin_width = best_nice_width(range, nbins);
     let nice_lo = (raw_min / bin_width).floor() * bin_width;
     let nice_hi = (raw_max / bin_width).ceil() * bin_width;
     let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
@@ -281,23 +279,39 @@ fn format_bin_labels(edges: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
-/// Round a raw bin width to a nice number (1, 2, 5 × 10^n).
-fn nice_bin_width(raw: f64) -> f64 {
-    if raw <= 0.0 {
+/// Pick the nice bin width (1, 2, 5 × 10^k) whose resulting bin count
+/// is closest to `nbins`. Tries candidates at two adjacent exponent scales.
+fn best_nice_width(range: f64, nbins: usize) -> f64 {
+    let raw_width = range / nbins as f64;
+    if raw_width <= 0.0 {
         return 1.0;
     }
-    let exp = raw.log10().floor();
-    let frac = raw / 10f64.powf(exp);
-    let nice = if frac < 1.5 {
-        1.0
-    } else if frac < 3.0 {
-        2.0
-    } else if frac < 7.0 {
-        5.0
-    } else {
-        10.0
-    };
-    nice * 10f64.powf(exp)
+    let exp = raw_width.log10().floor();
+
+    let mut best_w = raw_width;
+    let mut best_diff = usize::MAX;
+
+    // Try nice multiples at two adjacent scales to cover the search space
+    for &e in &[exp - 1.0, exp, exp + 1.0] {
+        let base = 10f64.powf(e);
+        for &nice in &[1.0, 2.0, 2.5, 4.0, 5.0] {
+            let w = nice * base;
+            if w <= 0.0 {
+                continue;
+            }
+            let bins = (range / w).ceil() as usize;
+            if bins == 0 {
+                continue;
+            }
+            let diff = bins.abs_diff(nbins);
+            if diff < best_diff {
+                best_diff = diff;
+                best_w = w;
+            }
+        }
+    }
+
+    best_w
 }
 
 fn format_compact(v: f64) -> String {

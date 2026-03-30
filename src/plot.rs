@@ -545,9 +545,7 @@ pub fn render_barplot(
     let max_val_label_len = val_labels.iter().map(|l| l.len()).max().unwrap_or(0);
 
     let bar_area = width
-        .saturating_sub(
-            gutter + 1 + max_val_label_len + padding.left + padding.right + margin.right,
-        )
+        .saturating_sub(1 + max_val_label_len + padding.left + padding.right)
         .max(4);
     let inner_width = padding.left + bar_area + 1 + max_val_label_len + padding.right;
 

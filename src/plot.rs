@@ -571,7 +571,7 @@ pub fn render_barplot(
 
     // Helper: emit an empty row inside the border (for padding.top / padding.bottom)
     let emit_empty_inner_row = |out: &mut String| {
-        out.push_str(&" ".repeat(gutter));
+        out.push_str(&" ".repeat(gutter - 1));
         if use_color {
             out.push_str(DIM);
         }
@@ -579,7 +579,7 @@ pub fn render_barplot(
         if use_color {
             out.push_str(DIM_RESET);
         }
-        out.push_str(&" ".repeat(inner_width));
+        out.push_str(&" ".repeat(inner_width + 1));
         if use_color {
             out.push_str(DIM);
         }
@@ -591,13 +591,13 @@ pub fn render_barplot(
         out.push('\n');
     };
 
-    // Top border
-    out.push_str(&" ".repeat(gutter));
+    // Top border (align ┌ with ┤ on data rows)
+    out.push_str(&" ".repeat(gutter - 1));
     if use_color {
         out.push_str(DIM);
     }
     out.push('┌');
-    out.push_str(&" ".repeat(inner_width));
+    out.push_str(&" ".repeat(inner_width + 1));
     out.push('┐');
     if use_color {
         out.push_str(DIM_RESET);
@@ -669,13 +669,13 @@ pub fn render_barplot(
         emit_empty_inner_row(&mut out);
     }
 
-    // Bottom border
-    out.push_str(&" ".repeat(gutter));
+    // Bottom border (align └ with ┤ on data rows)
+    out.push_str(&" ".repeat(gutter - 1));
     if use_color {
         out.push_str(DIM);
     }
     out.push('└');
-    out.push_str(&" ".repeat(inner_width));
+    out.push_str(&" ".repeat(inner_width + 1));
     out.push('┘');
     if use_color {
         out.push_str(DIM_RESET);

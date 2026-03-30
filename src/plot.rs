@@ -625,13 +625,24 @@ pub fn render_barplot(
     let left_pad_str = " ".repeat(padding.left);
 
     for (i, (label, &val)) in data.labels.iter().zip(data.values.iter()).enumerate() {
+        let pad = label_field.saturating_sub(label.len());
+        out.push_str(&" ".repeat(pad));
         if use_color {
+            for ch in label.chars() {
+                if ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == 'e' || ch == 'E' {
+                    out.push_str(DIM_RESET);
+                    out.push(ch);
+                } else {
+                    out.push_str(DIM);
+                    out.push(ch);
+                }
+            }
             out.push_str(DIM);
-        }
-        out.push_str(&format!("{:>w$}", label, w = label_field));
-        out.push_str(" ┤");
-        if use_color {
+            out.push_str(" ┤");
             out.push_str(DIM_RESET);
+        } else {
+            out.push_str(label);
+            out.push_str(" ┤");
         }
         out.push_str(&left_pad_str);
 
@@ -689,16 +700,10 @@ pub fn render_barplot(
     // Frequency label centered under bar area
     {
         let freq = "Frequency";
-        let total = gutter + 1 + inner_width + 1 + right_trail;
-        let pad = total.saturating_sub(freq.len()) / 2;
+        let bar_center = gutter + padding.left + bar_area / 2;
+        let pad = bar_center.saturating_sub(freq.len() / 2);
         out.push_str(&" ".repeat(pad));
-        if use_color {
-            out.push_str(DIM);
-        }
         out.push_str(freq);
-        if use_color {
-            out.push_str(DIM_RESET);
-        }
         out.push('\n');
     }
 

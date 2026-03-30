@@ -180,7 +180,7 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
     }
 
     // Pick the nicest bin width that best preserves the requested count.
-    let bin_width = best_nice_width(range, nbins);
+    let bin_width = okay_bin_width(range / nbins as f64);
     let nice_lo = (raw_min / bin_width).floor() * bin_width;
     let nice_hi = (raw_max / bin_width).ceil() * bin_width;
     let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
@@ -238,7 +238,7 @@ pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
         return Ok(BarData { labels, values });
     }
 
-    let bin_width = best_nice_width(range, nbins);
+    let bin_width = okay_bin_width(range / nbins as f64);
     let nice_lo = (raw_min / bin_width).floor() * bin_width;
     let nice_hi = (raw_max / bin_width).ceil() * bin_width;
     let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
@@ -279,39 +279,33 @@ fn format_bin_labels(edges: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
-/// Pick the nice bin width (1, 2, 5 × 10^k) whose resulting bin count
-/// is closest to `nbins`. Tries candidates at two adjacent exponent scales.
-fn best_nice_width(range: f64, nbins: usize) -> f64 {
-    let raw_width = range / nbins as f64;
-    if raw_width <= 0.0 {
+/// Round a bin width to a reasonably round number.
+/// Denser than classic 1/2/5: snaps to {1, 2, 2.5, 3, 4, 5, 8} × 10^k
+/// so the resulting bin count stays close to what was requested.
+fn okay_bin_width(raw: f64) -> f64 {
+    if raw <= 0.0 {
         return 1.0;
     }
-    let exp = raw_width.log10().floor();
-
-    let mut best_w = raw_width;
-    let mut best_diff = usize::MAX;
-
-    // Try nice multiples at two adjacent scales to cover the search space
-    for &e in &[exp - 1.0, exp, exp + 1.0] {
-        let base = 10f64.powf(e);
-        for &nice in &[1.0, 2.0, 2.5, 4.0, 5.0] {
-            let w = nice * base;
-            if w <= 0.0 {
-                continue;
-            }
-            let bins = (range / w).ceil() as usize;
-            if bins == 0 {
-                continue;
-            }
-            let diff = bins.abs_diff(nbins);
-            if diff < best_diff {
-                best_diff = diff;
-                best_w = w;
-            }
-        }
-    }
-
-    best_w
+    let exp = raw.log10().floor();
+    let frac = raw / 10f64.powf(exp);
+    let nice = if frac < 1.5 {
+        1.0
+    } else if frac < 2.25 {
+        2.0
+    } else if frac < 2.75 {
+        2.5
+    } else if frac < 3.5 {
+        3.0
+    } else if frac < 4.5 {
+        4.0
+    } else if frac < 6.5 {
+        5.0
+    } else if frac < 9.0 {
+        8.0
+    } else {
+        10.0
+    };
+    nice * 10f64.powf(exp)
 }
 
 fn format_compact(v: f64) -> String {

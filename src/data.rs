@@ -221,6 +221,57 @@ pub fn filter_values(mut values: Vec<f64>, gt: Option<f64>, lt: Option<f64>) -> 
     values
 }
 
+pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
+    for &v in values {
+        if v <= 0.0 {
+            return Err(format!("--log requires all values > 0 (found {v})"));
+        }
+    }
+
+    let log_vals: Vec<f64> = values.iter().map(|v| v.log10()).collect();
+    let raw_min = log_vals.iter().cloned().reduce(f64::min).unwrap();
+    let raw_max = log_vals.iter().cloned().reduce(f64::max).unwrap();
+    let range = raw_max - raw_min;
+
+    if range <= 0.0 {
+        let v = values[0];
+        let labels = vec![format!(
+            "[{}, {})",
+            format_compact(v),
+            format_compact(v * 10.0)
+        )];
+        let values = vec![values.len() as f64];
+        return Ok(BarData { labels, values });
+    }
+
+    let raw_width = range / nbins as f64;
+    let bin_width = nice_bin_width(raw_width);
+    let nice_lo = (raw_min / bin_width).floor() * bin_width;
+    let nice_hi = (raw_max / bin_width).ceil() * bin_width;
+    let actual_bins = ((nice_hi - nice_lo) / bin_width).round() as usize;
+
+    let mut counts = vec![0u64; actual_bins];
+    for &lv in &log_vals {
+        let mut idx = ((lv - nice_lo) / bin_width) as usize;
+        if idx >= actual_bins {
+            idx = actual_bins - 1;
+        }
+        counts[idx] += 1;
+    }
+
+    let labels: Vec<String> = (0..actual_bins)
+        .map(|i| {
+            let lo = 10f64.powf(nice_lo + i as f64 * bin_width);
+            let hi = 10f64.powf(nice_lo + (i + 1) as f64 * bin_width);
+            format!("[{}, {})", format_compact(lo), format_compact(hi))
+        })
+        .collect();
+
+    let values: Vec<f64> = counts.iter().map(|&c| c as f64).collect();
+
+    Ok(BarData { labels, values })
+}
+
 /// Round a raw bin width to a nice number (1, 2, 5 × 10^n).
 fn nice_bin_width(raw: f64) -> f64 {
     if raw <= 0.0 {
@@ -591,5 +642,47 @@ mod tests {
         let vals = vec![1.0, 2.0, 3.0];
         let out = filter_values(vals, Some(10.0), None);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn bin_values_log_basic() {
+        let vals: Vec<f64> = (0..300).map(|i| 10f64.powf(i as f64 / 100.0)).collect();
+        let bar = bin_values_log(&vals, 6).unwrap();
+        let total: f64 = bar.values.iter().sum();
+        assert_eq!(total, 300.0);
+        assert!(bar.labels[0].starts_with('['));
+        assert!(bar.labels[0].contains(','));
+        assert!(bar.labels.len() >= 2);
+    }
+
+    #[test]
+    fn bin_values_log_single_decade() {
+        let vals = vec![1.0, 2.0, 3.0, 5.0, 7.0, 9.0];
+        let bar = bin_values_log(&vals, 4).unwrap();
+        let total: f64 = bar.values.iter().sum();
+        assert_eq!(total, 6.0);
+    }
+
+    #[test]
+    fn bin_values_log_negative_errors() {
+        let vals = vec![1.0, -5.0, 10.0];
+        let result = bin_values_log(&vals, 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("--log requires all values > 0"));
+    }
+
+    #[test]
+    fn bin_values_log_zero_errors() {
+        let vals = vec![0.0, 1.0, 10.0];
+        let result = bin_values_log(&vals, 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bin_values_log_all_same() {
+        let vals = vec![100.0, 100.0, 100.0];
+        let bar = bin_values_log(&vals, 5).unwrap();
+        let total: f64 = bar.values.iter().sum();
+        assert_eq!(total, 3.0);
     }
 }

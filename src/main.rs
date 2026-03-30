@@ -100,39 +100,68 @@ fn main() {
             )
         }
         Command::Hist => {
-            let values = match data::read_hist_input(&opts) {
-                Ok(d) => d,
+            let nbins = opts.nbins.unwrap_or(10);
+            let delimiter = opts.delimiter as u8;
+            let bar_data = if opts.files.is_empty() {
+                fu::hist::hist_from_stdin(
+                    delimiter,
+                    opts.has_headers,
+                    opts.gt,
+                    opts.lt,
+                    opts.log_scale,
+                    nbins,
+                )
+            } else if opts.files.len() == 1 {
+                fu::hist::hist_from_file(
+                    &opts.files[0],
+                    delimiter,
+                    opts.has_headers,
+                    opts.gt,
+                    opts.lt,
+                    opts.log_scale,
+                    nbins,
+                )
+            } else {
+                let mut buf = Vec::new();
+                for path in &opts.files {
+                    match std::fs::read(path) {
+                        Ok(content) => {
+                            buf.extend_from_slice(&content);
+                            if buf.last() != Some(&b'\n') {
+                                buf.push(b'\n');
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("fu: {path}: {e}");
+                            process::exit(1);
+                        }
+                    }
+                }
+                fu::hist::hist_from_bytes(
+                    &buf,
+                    delimiter,
+                    opts.has_headers,
+                    opts.gt,
+                    opts.lt,
+                    opts.log_scale,
+                    nbins,
+                )
+            };
+            match bar_data {
+                Ok(d) => plot::render_barplot(
+                    &d,
+                    width,
+                    opts.title.as_deref(),
+                    &color_mode,
+                    &margin,
+                    &padding,
+                    '▇',
+                ),
                 Err(e) => {
                     eprintln!("fu: {e}");
                     process::exit(1);
                 }
-            };
-            let values = data::filter_values(values, opts.gt, opts.lt);
-            if values.is_empty() {
-                eprintln!("fu: no data after filtering");
-                process::exit(1);
             }
-            let nbins = opts.nbins.unwrap_or(10);
-            let bar_data = if opts.log_scale {
-                match data::bin_values_log(&values, nbins) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        eprintln!("fu: {e}");
-                        process::exit(1);
-                    }
-                }
-            } else {
-                data::bin_values(&values, nbins)
-            };
-            plot::render_barplot(
-                &bar_data,
-                width,
-                opts.title.as_deref(),
-                &color_mode,
-                &margin,
-                &padding,
-                '▇',
-            )
         }
         Command::Count => {
             let bar_data = match data::read_count_input(&opts) {

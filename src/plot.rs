@@ -280,6 +280,8 @@ fn axis_ticks(lo: f64, hi: f64, n_cells: usize, n_target: usize) -> Vec<(f64, us
 /// ANSI dark gray for borders/labels (matches uplot \033[90m).
 const DIM: &str = "\x1b[90m";
 const DIM_RESET: &str = "\x1b[39m";
+const BOLD: &str = "\x1b[1m";
+const BOLD_RESET: &str = "\x1b[22m";
 
 #[allow(clippy::too_many_arguments)]
 fn render_frame(
@@ -563,7 +565,13 @@ pub fn render_barplot(
         let total = gutter + 1 + inner_width + 1 + right_trail;
         let pad = total.saturating_sub(t.len()) / 2;
         out.push_str(&" ".repeat(pad));
+        if use_color {
+            out.push_str(BOLD);
+        }
         out.push_str(t);
+        if use_color {
+            out.push_str(BOLD_RESET);
+        }
         out.push('\n');
     }
 
@@ -618,12 +626,9 @@ pub fn render_barplot(
 
     for (i, (label, &val)) in data.labels.iter().zip(data.values.iter()).enumerate() {
         if use_color {
-            out.push_str(crate::color::RESET);
-        }
-        out.push_str(&format!("{:>w$}", label, w = label_field));
-        if use_color {
             out.push_str(DIM);
         }
+        out.push_str(&format!("{:>w$}", label, w = label_field));
         out.push_str(" ┤");
         if use_color {
             out.push_str(DIM_RESET);
@@ -680,6 +685,22 @@ pub fn render_barplot(
     }
     out.push_str(&" ".repeat(right_trail));
     out.push('\n');
+
+    // Frequency label centered under bar area
+    {
+        let freq = "Frequency";
+        let total = gutter + 1 + inner_width + 1 + right_trail;
+        let pad = total.saturating_sub(freq.len()) / 2;
+        out.push_str(&" ".repeat(pad));
+        if use_color {
+            out.push_str(DIM);
+        }
+        out.push_str(freq);
+        if use_color {
+            out.push_str(DIM_RESET);
+        }
+        out.push('\n');
+    }
 
     // margin.bottom
     for _ in 0..margin.bottom {

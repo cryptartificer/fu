@@ -560,9 +560,11 @@ pub fn render_barplot(
         out.push('\n');
     }
 
-    // Title centered over bar area
+    // Title centered over bar area (┌ to ┐)
     if let Some(t) = title {
-        let bar_center = gutter + bar_area / 2;
+        let bar_left = gutter - 1; // position of ┌
+        let bar_right = bar_left + inner_width + 2; // position after ┐
+        let bar_center = bar_left + (bar_right - bar_left) / 2;
         let pad = bar_center.saturating_sub(t.len() / 2);
         out.push_str(&" ".repeat(pad));
         if use_color {
@@ -687,10 +689,12 @@ pub fn render_barplot(
     out.push_str(&" ".repeat(right_trail));
     out.push('\n');
 
-    // Frequency label centered over bar area
+    // Frequency label centered over bar area (┌ to ┐)
     {
         let freq = "Frequency";
-        let bar_center = gutter + bar_area / 2;
+        let bar_left = gutter - 1;
+        let bar_right = bar_left + inner_width + 2;
+        let bar_center = bar_left + (bar_right - bar_left) / 2;
         let pad = bar_center.saturating_sub(freq.len() / 2);
         out.push_str(&" ".repeat(pad));
         out.push_str(freq);

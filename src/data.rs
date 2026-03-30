@@ -173,11 +173,8 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
     let range = raw_max - raw_min;
 
     if range <= 0.0 {
-        let labels = vec![format!(
-            "[{}, {})",
-            format_compact(raw_min),
-            format_compact(raw_min + 1.0)
-        )];
+        let edges = vec![(format_compact(raw_min), format_compact(raw_min + 1.0))];
+        let labels = format_bin_labels(&edges);
         let values = vec![values.len() as f64];
         return BarData { labels, values };
     }
@@ -198,14 +195,15 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
         counts[idx] += 1;
     }
 
-    let labels: Vec<String> = (0..actual_bins)
+    let edges: Vec<(String, String)> = (0..actual_bins)
         .map(|i| {
             let lo = nice_lo + i as f64 * bin_width;
             let hi = lo + bin_width;
-            format!("[{}, {})", format_compact(lo), format_compact(hi))
+            (format_compact(lo), format_compact(hi))
         })
         .collect();
 
+    let labels = format_bin_labels(&edges);
     let values: Vec<f64> = counts.iter().map(|&c| c as f64).collect();
 
     BarData { labels, values }
@@ -235,11 +233,8 @@ pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
 
     if range <= 0.0 {
         let v = values[0];
-        let labels = vec![format!(
-            "[{}, {})",
-            format_compact(v),
-            format_compact(v * 10.0)
-        )];
+        let edges = vec![(format_compact(v), format_compact(v * 10.0))];
+        let labels = format_bin_labels(&edges);
         let values = vec![values.len() as f64];
         return Ok(BarData { labels, values });
     }
@@ -259,17 +254,31 @@ pub fn bin_values_log(values: &[f64], nbins: usize) -> Result<BarData, String> {
         counts[idx] += 1;
     }
 
-    let labels: Vec<String> = (0..actual_bins)
+    let edges: Vec<(String, String)> = (0..actual_bins)
         .map(|i| {
             let lo = 10f64.powf(nice_lo + i as f64 * bin_width);
             let hi = 10f64.powf(nice_lo + (i + 1) as f64 * bin_width);
-            format!("[{}, {})", format_compact(lo), format_compact(hi))
+            (format_compact(lo), format_compact(hi))
         })
         .collect();
 
+    let labels = format_bin_labels(&edges);
     let values: Vec<f64> = counts.iter().map(|&c| c as f64).collect();
 
     Ok(BarData { labels, values })
+}
+
+/// Format bin labels with right-justified numbers inside brackets (matching uplot).
+fn format_bin_labels(edges: &[(String, String)]) -> Vec<String> {
+    let max_w = edges
+        .iter()
+        .flat_map(|(lo, hi)| [lo.len(), hi.len()])
+        .max()
+        .unwrap_or(0);
+    edges
+        .iter()
+        .map(|(lo, hi)| format!("[{:>w$}, {:>w$})", lo, hi, w = max_w))
+        .collect()
 }
 
 /// Round a raw bin width to a nice number (1, 2, 5 × 10^n).

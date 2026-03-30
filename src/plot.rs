@@ -551,7 +551,7 @@ pub fn render_barplot(
         .max(4);
     let inner_width = padding.left + bar_area + 1 + max_val_label_len + padding.right;
 
-    let right_trail = margin.right.max(1);
+    let right_trail = margin.right;
 
     let mut out = String::new();
 
@@ -665,16 +665,6 @@ pub fn render_barplot(
         }
         out.push(' ');
         out.push_str(&val_labels[i]);
-
-        let used = padding.left + bar_len + 1 + val_labels[i].len() + padding.right;
-        if used < inner_width {
-            out.push_str(&" ".repeat(inner_width - used));
-        }
-        if use_color {
-            out.push_str(DIM);
-            out.push_str(&" ".repeat(right_trail));
-            out.push_str(DIM_RESET);
-        }
         out.push('\n');
     }
 

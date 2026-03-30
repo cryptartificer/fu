@@ -72,10 +72,14 @@ pub fn hist_from_bytes(
             )
         })?;
 
-        if let Some(lo) = gt && v <= lo {
+        if let Some(lo) = gt
+            && v <= lo
+        {
             continue;
         }
-        if let Some(hi) = lt && v >= hi {
+        if let Some(hi) = lt
+            && v >= hi
+        {
             continue;
         }
 

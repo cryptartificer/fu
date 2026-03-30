@@ -668,7 +668,11 @@ mod tests {
         let vals = vec![1.0, -5.0, 10.0];
         let result = bin_values_log(&vals, 5);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("--log requires all values > 0"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("--log requires all values > 0")
+        );
     }
 
     #[test]

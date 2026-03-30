@@ -107,8 +107,23 @@ fn main() {
                     process::exit(1);
                 }
             };
+            let values = data::filter_values(values, opts.gt, opts.lt);
+            if values.is_empty() {
+                eprintln!("fu: no data after filtering");
+                process::exit(1);
+            }
             let nbins = opts.nbins.unwrap_or(10);
-            let bar_data = data::bin_values(&values, nbins);
+            let bar_data = if opts.log_scale {
+                match data::bin_values_log(&values, nbins) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("fu: {e}");
+                        process::exit(1);
+                    }
+                }
+            } else {
+                data::bin_values(&values, nbins)
+            };
             plot::render_barplot(
                 &bar_data,
                 width,

@@ -211,6 +211,16 @@ pub fn bin_values(values: &[f64], nbins: usize) -> BarData {
     BarData { labels, values }
 }
 
+pub fn filter_values(mut values: Vec<f64>, gt: Option<f64>, lt: Option<f64>) -> Vec<f64> {
+    if let Some(lo) = gt {
+        values.retain(|&v| v > lo);
+    }
+    if let Some(hi) = lt {
+        values.retain(|&v| v < hi);
+    }
+    values
+}
+
 /// Round a raw bin width to a nice number (1, 2, 5 × 10^n).
 fn nice_bin_width(raw: f64) -> f64 {
     if raw <= 0.0 {
@@ -546,5 +556,40 @@ mod tests {
             .collect();
         let ds = parse_lines(&lines, '\t', false).unwrap();
         assert_eq!(ds.x, vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn filter_values_gt() {
+        let vals = vec![1.0, 5.0, 10.0, 15.0, 20.0];
+        let out = filter_values(vals, Some(5.0), None);
+        assert_eq!(out, vec![10.0, 15.0, 20.0]);
+    }
+
+    #[test]
+    fn filter_values_lt() {
+        let vals = vec![1.0, 5.0, 10.0, 15.0, 20.0];
+        let out = filter_values(vals, None, Some(15.0));
+        assert_eq!(out, vec![1.0, 5.0, 10.0]);
+    }
+
+    #[test]
+    fn filter_values_both() {
+        let vals = vec![1.0, 5.0, 10.0, 15.0, 20.0];
+        let out = filter_values(vals, Some(1.0), Some(20.0));
+        assert_eq!(out, vec![5.0, 10.0, 15.0]);
+    }
+
+    #[test]
+    fn filter_values_none() {
+        let vals = vec![1.0, 2.0, 3.0];
+        let out = filter_values(vals, None, None);
+        assert_eq!(out, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn filter_values_all_excluded() {
+        let vals = vec![1.0, 2.0, 3.0];
+        let out = filter_values(vals, Some(10.0), None);
+        assert!(out.is_empty());
     }
 }

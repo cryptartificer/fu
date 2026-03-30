@@ -521,6 +521,28 @@ fn render_frame(
     out
 }
 
+/// Barplot layout anatomy:
+///
+/// ```text
+///                                title
+///              ┌───────────── bar_area (= -w) ───────────────┐  frame
+/// label        ┤▇▇▇▇▇▇▇▇ bar_len  val_label                │  data row
+/// ├label_field┤├connector                                    │
+/// ├── gutter ──┤                                             │
+///              └─────────────────────────────────────────────┘  frame
+///                               footer
+/// ```
+///
+/// - label:       bin range text, e.g. `[   0.0,  100.0)`
+/// - connector:   ` ┤` joining label to frame
+/// - bar_len:     filled ▇ portion (proportional to value)
+/// - val_label:   count after the bar, e.g. `66626`
+/// - frame:       ┌┐└┘ border enclosing bar_area
+/// - bar_area:    full interior of the frame (what -w controls)
+/// - label_field: label width with right-justification padding
+/// - gutter:      label_field + 2 (includes connector)
+/// - title:       bold, centered in bar_area
+/// - footer:      "Frequency", centered in bar_area
 pub fn render_barplot(
     data: &BarData,
     width: usize,
@@ -542,7 +564,7 @@ pub fn render_barplot(
     let palette = color_mode.palette();
     let max_label_len = data.labels.iter().map(|l| l.len()).max().unwrap_or(0);
     let label_field = margin.left + max_label_len;
-    let gutter = label_field + 2; // label + " ┤"
+    let gutter = label_field + 2; // label_field + connector (" ┤")
     let val_labels: Vec<String> = data.values.iter().map(|&v| format_val(v)).collect();
     let max_val_label_len = val_labels.iter().map(|l| l.len()).max().unwrap_or(0);
 

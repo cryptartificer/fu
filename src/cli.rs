@@ -101,6 +101,9 @@ pub struct Options {
     pub ylim: Option<(f64, f64)>,
     pub margin: Option<Sides>,
     pub padding: Option<Sides>,
+    pub log_scale: bool,
+    pub gt: Option<f64>,
+    pub lt: Option<f64>,
 }
 
 impl Default for Options {
@@ -126,6 +129,9 @@ impl Default for Options {
             ylim: None,
             margin: None,
             padding: None,
+            log_scale: false,
+            gt: None,
+            lt: None,
         }
     }
 }
@@ -229,6 +235,19 @@ pub fn parse_from(args: Vec<String>) -> Result<Options, String> {
                 let val = arg_value(&args, i, "--padding")?;
                 opts.padding = Some(parse_sides(&val, "--padding")?);
             }
+            "--log" => {
+                opts.log_scale = true;
+            }
+            "--gt" => {
+                i += 1;
+                let val = arg_value(&args, i, "--gt")?;
+                opts.gt = Some(val.parse().map_err(|_| "--gt must be a number")?);
+            }
+            "--lt" => {
+                i += 1;
+                let val = arg_value(&args, i, "--lt")?;
+                opts.lt = Some(val.parse().map_err(|_| "--lt must be a number")?);
+            }
             "-n" | "--nbins" => {
                 i += 1;
                 let val = arg_value(&args, i, "-n")?;
@@ -316,6 +335,9 @@ General options:
     --grid              show grid lines
     --xlim MIN,MAX      x-axis range limits
     --ylim MIN,MAX      y-axis range limits
+    --log               logarithmic bin edges (histogram)
+    --gt N              exclude values <= N (histogram filter)
+    --lt N              exclude values >= N (histogram filter)
     --xlabel LABEL      x-axis label
     --ylabel LABEL      y-axis label
     --help              print help menu"
@@ -489,5 +511,36 @@ mod tests {
     #[test]
     fn parse_margin_non_integer_is_err() {
         assert!(parse_from(args("line -m abc")).is_err());
+    }
+
+    #[test]
+    fn parse_log_flag() {
+        let opts = parse_from(args("hist --log")).unwrap();
+        assert_eq!(opts.command, Command::Hist);
+        assert!(opts.log_scale);
+    }
+
+    #[test]
+    fn parse_gt_flag() {
+        let opts = parse_from(args("hist --gt 5")).unwrap();
+        assert_eq!(opts.gt, Some(5.0));
+    }
+
+    #[test]
+    fn parse_lt_flag() {
+        let opts = parse_from(args("hist --lt 100")).unwrap();
+        assert_eq!(opts.lt, Some(100.0));
+    }
+
+    #[test]
+    fn parse_gt_lt_combined() {
+        let opts = parse_from(args("hist --gt 0 --lt 1000")).unwrap();
+        assert_eq!(opts.gt, Some(0.0));
+        assert_eq!(opts.lt, Some(1000.0));
+    }
+
+    #[test]
+    fn parse_gt_missing_value_is_err() {
+        assert!(parse_from(args("hist --gt")).is_err());
     }
 }

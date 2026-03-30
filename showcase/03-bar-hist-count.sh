@@ -61,4 +61,37 @@ compare \
     "count -t 'Word Frequency' -w 45" \
     "count -t 'Word Frequency' -w 45"
 
+pause
+
+section "6. Log-scale histogram — file sizes (3 decades)"
+
+show "fu hist --log -t 'File Sizes (log bins)' -w 55" \
+    "python3 -c \"
+import random; random.seed(42)
+for _ in range(500):
+    print(10**random.uniform(1, 4))
+\" | $FU hist --log -t 'File Sizes (log bins)' -w 55 -C"
+
+pause
+
+section "7. Filtered histogram — zoom into center"
+
+show "fu hist --gt 30 --lt 70 -t 'Normal (30 < x < 70)' -w 55 -n 12" \
+    "python3 -c \"
+import random; random.seed(42)
+for _ in range(500):
+    print(random.gauss(50, 15))
+\" | $FU hist --gt 30 --lt 70 -t 'Normal (30 < x < 70)' -w 55 -n 12 -C"
+
+pause
+
+section "8. Log-scale + filter combined"
+
+show "fu hist --log --gt 1 --lt 100000 -t 'Latencies 1-100k μs (log)' -w 55" \
+    "python3 -c \"
+import random; random.seed(7)
+for _ in range(1000):
+    print(10**random.uniform(-1, 6))
+\" | $FU hist --log --gt 1 --lt 100000 -t 'Latencies 1-100k μs (log)' -w 55 -C"
+
 printf "\n${C_BOLD}Done.${C_RESET}\n"

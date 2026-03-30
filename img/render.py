@@ -195,6 +195,11 @@ charts = [
         "count -t 'Protocol Distribution' -w 45 -C -c yellow",
     ),
     (
+        "log_hist",
+        "python3 -c \"import random; random.seed(42); [print(10**random.uniform(1, 4)) for _ in range(500)]\"",
+        "hist --log -t 'File Sizes (log bins)' -w 60 -h 15 -C -c green",
+    ),
+    (
         "multi_line",
         "python3 -c \"\nimport math\nprint('x\\tsin\\tcos')\nfor i in range(100):\n    t = i * math.pi / 25\n    print(f'{t:.3f}\\t{math.sin(t):.4f}\\t{math.cos(t):.4f}')\"",
         "lines -H -t 'sin vs cos' -w 70 -h 15 -C",

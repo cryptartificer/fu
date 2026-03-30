@@ -101,6 +101,18 @@ python3 -c 'import random; random.seed(42); [print(random.gauss(50, 15)) for _ i
 
 <img src="img/hist.png" width="580" alt="Histogram">
 
+**Log-scale histogram** — 500 values across 3 decades, logarithmic bin edges
+
+```
+python3 -c '
+import random; random.seed(42)
+for _ in range(500):
+    print(10**random.uniform(1, 4))
+' | fu hist --log -t "File Sizes (log bins)" -w 60 -h 15
+```
+
+<img src="img/log_hist.png" width="580" alt="Log-scale histogram">
+
 **Count** — occurrence counting, sorted by frequency
 
 ```
@@ -183,6 +195,9 @@ cat data.tsv | fu line -t "peek" | next_command
 --ylim MIN,MAX  y-axis range
 --xlabel      x-axis label
 --ylabel      y-axis label
+--log         logarithmic bin edges (histogram)
+--gt N        exclude values <= N (histogram filter)
+--lt N        exclude values >= N (histogram filter)
 ```
 
 ## Showcase
@@ -213,6 +228,7 @@ Individual scripts in `showcase/`:
 - [x] ANSI color (16 named + 256 indexed)
 - [x] Auto-color palette, legend
 - [x] Grid, x/y-axis limits
+- [x] Log-scale histogram bins, value filtering (--gt/--lt)
 - [ ] Canvas types (block, ascii, density)
 - [ ] Density plot, boxplot
 - [ ] Tail mode — live-updating charts from streaming data

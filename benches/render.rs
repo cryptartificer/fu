@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use fu::cli::Options;
 use fu::data;
 
@@ -29,17 +29,21 @@ fn bench_parse_hist(c: &mut Criterion) {
     for &n in &[10_000, 100_000, 1_000_000] {
         let lines = generate_hist_lines(n);
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(BenchmarkId::new("parse_hist_lines", n), &lines, |b, lines| {
-            b.iter(|| {
-                let mut values = Vec::with_capacity(lines.len());
-                for line in lines.iter().filter(|l| !l.is_empty()) {
-                    let field = line.split('\t').next().unwrap_or("").trim();
-                    let v: f64 = field.parse().unwrap();
-                    values.push(v);
-                }
-                values
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("parse_hist_lines", n),
+            &lines,
+            |b, lines| {
+                b.iter(|| {
+                    let mut values = Vec::with_capacity(lines.len());
+                    for line in lines.iter().filter(|l| !l.is_empty()) {
+                        let field = line.split('\t').next().unwrap_or("").trim();
+                        let v: f64 = field.parse().unwrap();
+                        values.push(v);
+                    }
+                    values
+                });
+            },
+        );
     }
 
     group.finish();
@@ -50,10 +54,7 @@ fn bench_bin_values(c: &mut Criterion) {
 
     for &n in &[10_000, 100_000, 1_000_000] {
         let lines = generate_hist_lines(n);
-        let values: Vec<f64> = lines
-            .iter()
-            .map(|l| l.parse::<f64>().unwrap())
-            .collect();
+        let values: Vec<f64> = lines.iter().map(|l| l.parse::<f64>().unwrap()).collect();
 
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::new("bin_values", n), &values, |b, values| {
@@ -76,19 +77,12 @@ fn bench_filter_values(c: &mut Criterion) {
 
     for &n in &[10_000, 100_000, 1_000_000] {
         let lines = generate_hist_lines(n);
-        let values: Vec<f64> = lines
-            .iter()
-            .map(|l| l.parse::<f64>().unwrap())
-            .collect();
+        let values: Vec<f64> = lines.iter().map(|l| l.parse::<f64>().unwrap()).collect();
 
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(
-            BenchmarkId::new("filter_gt_lt", n),
-            &values,
-            |b, values| {
-                b.iter(|| data::filter_values(values.clone(), Some(30.0), Some(70.0)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("filter_gt_lt", n), &values, |b, values| {
+            b.iter(|| data::filter_values(values.clone(), Some(30.0), Some(70.0)));
+        });
     }
 
     group.finish();
@@ -101,20 +95,62 @@ fn bench_end_to_end(c: &mut Criterion) {
         let text = generate_hist_text(n);
 
         group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::new("hist_pipeline", n), &text, |b, text| {
+            b.iter(|| {
+                // Simulate the full pipeline: split lines, parse, bin
+                let lines: Vec<String> = text.lines().map(String::from).collect();
+                let mut values = Vec::with_capacity(lines.len());
+                for line in lines.iter().filter(|l| !l.is_empty()) {
+                    let field = line.split('\t').next().unwrap_or("").trim();
+                    let v: f64 = field.parse().unwrap();
+                    values.push(v);
+                }
+                data::bin_values(&values, 10)
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_fast_path(c: &mut Criterion) {
+    let mut group = c.benchmark_group("hist_fast");
+
+    for &n in &[10_000, 100_000, 1_000_000] {
+        let text = generate_hist_text(n);
+
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::new("hist_from_bytes", n), &text, |b, text| {
+            b.iter(|| {
+                fu::hist::hist_from_bytes(text.as_bytes(), b'\t', false, None, None, false, 10)
+                    .unwrap()
+            });
+        });
         group.bench_with_input(
-            BenchmarkId::new("hist_pipeline", n),
+            BenchmarkId::new("hist_from_bytes_log", n),
             &text,
             |b, text| {
                 b.iter(|| {
-                    // Simulate the full pipeline: split lines, parse, bin
-                    let lines: Vec<String> = text.lines().map(String::from).collect();
-                    let mut values = Vec::with_capacity(lines.len());
-                    for line in lines.iter().filter(|l| !l.is_empty()) {
-                        let field = line.split('\t').next().unwrap_or("").trim();
-                        let v: f64 = field.parse().unwrap();
-                        values.push(v);
-                    }
-                    data::bin_values(&values, 10)
+                    fu::hist::hist_from_bytes(text.as_bytes(), b'\t', false, None, None, true, 10)
+                        .unwrap()
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("hist_from_bytes_filtered", n),
+            &text,
+            |b, text| {
+                b.iter(|| {
+                    fu::hist::hist_from_bytes(
+                        text.as_bytes(),
+                        b'\t',
+                        false,
+                        Some(30.0),
+                        Some(70.0),
+                        false,
+                        10,
+                    )
+                    .unwrap()
                 });
             },
         );
@@ -129,5 +165,6 @@ criterion_group!(
     bench_bin_values,
     bench_filter_values,
     bench_end_to_end,
+    bench_fast_path,
 );
 criterion_main!(benches);
